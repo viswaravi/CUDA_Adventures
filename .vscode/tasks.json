@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "meson setup",
+      "type": "shell",
+      "command": "meson setup build",
+    },
+    {
+      "label": "meson compile",
+      "type": "shell",
+      "command": "meson compile -C build --verbose",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "meson setup",
+      "problemMatcher": {
+        "owner": "$nvcc",
+        "fileLocation": ["relative", "${workspaceFolder}/build"],
+          }
+    }
+  ]
+}

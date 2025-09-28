@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "CUDA GDB: Vector Addition",
+            "type": "cuda-gdb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/1_vector_addition/vec_add",
+            "args": [],
+            "stopAtEntry": false,
+        },
+        {
+            "name": "CUDA GDB: Reduction",
+            "type": "cuda-gdb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/2_reduction_matmul/reduction",
+            "args": [],
+            "stopAtEntry": false,
+        },
+    ]    
+}
