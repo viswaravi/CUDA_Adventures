@@ -31,7 +31,7 @@ double reduceCPU(float *A, const unsigned long long length)
 // 1. Interleaved Addressing with Divergent Branches
 __global__ void reduce1(float *A, float *blockSums, const unsigned long long length)
 {
-  __shared__ float partialSum[BLOCK_WIDTH];
+  extern __shared__ float partialSum[];
 
   unsigned long long idx = (blockIdx.x * blockDim.x) + threadIdx.x;
   int tid = threadIdx.x;
@@ -62,7 +62,7 @@ __global__ void reduce1(float *A, float *blockSums, const unsigned long long len
 // 2. Interleaved Addressing with Bank Conflicts
 __global__ void reduce2(float *A, float *blockSums, const unsigned long long length)
 {
-  __shared__ float partialSum[BLOCK_WIDTH];
+  extern __shared__ float partialSum[];
 
   unsigned long long idx = (blockIdx.x * blockDim.x) + threadIdx.x;
   int tid = threadIdx.x;
@@ -93,7 +93,7 @@ __global__ void reduce2(float *A, float *blockSums, const unsigned long long len
 // 3. Sequential Addressing with Idle Threads
 __global__ void reduce3(float *A, float *blockSums, const unsigned long long length)
 {
-  __shared__ float partialSum[BLOCK_WIDTH];
+  extern __shared__ float partialSum[];
 
   unsigned long long idx = (blockIdx.x * blockDim.x) + threadIdx.x;
   int tid = threadIdx.x;
@@ -107,7 +107,7 @@ __global__ void reduce3(float *A, float *blockSums, const unsigned long long len
   {
     __syncthreads();
 
-    if (tid < stride && (tid + stride < BLOCK_WIDTH))
+    if (tid < stride && (tid + stride < blockDim.x))
     {
       partialSum[tid] += partialSum[tid + stride];
     }
@@ -124,13 +124,13 @@ __global__ void reduce3(float *A, float *blockSums, const unsigned long long len
 __global__ void reduce4(float *A, float *blockSums, const unsigned long long length)
 {
   // shared memory is halved, as each thread loads two elements
-  __shared__ float partialSum[BLOCK_WIDTH / 2];
+  extern __shared__ float partialSum[];
 
   // Double Block Dimension
   unsigned long long idx = (blockIdx.x * blockDim.x * 2) + threadIdx.x;
   int tid = threadIdx.x;
 
-  // Each thread loads sumd of two elements from global memory
+  // Each thread loads sum of two elements from global memory
   partialSum[tid] = idx < length ? A[idx] + A[idx + blockDim.x] : 0.0f;
 
   // Block Reduction in Strides - Stop at 32 for final warp reduction later
@@ -138,7 +138,7 @@ __global__ void reduce4(float *A, float *blockSums, const unsigned long long len
   {
     __syncthreads();
 
-    if (tid < stride && (tid + stride < BLOCK_WIDTH))
+    if (tid < stride && (tid + stride < blockDim.x))
     {
       partialSum[tid] += partialSum[tid + stride];
     }
@@ -155,13 +155,13 @@ __global__ void reduce4(float *A, float *blockSums, const unsigned long long len
 __global__ void reduce5(float *A, float *blockSums, const unsigned long long length)
 {
   // shared memory is halved, as each thread loads two elements
-  __shared__ float partialSum[BLOCK_WIDTH / 2];
+  extern __shared__ float partialSum[];
 
   // Double Block Dimension
   unsigned long long idx = (blockIdx.x * blockDim.x * 2) + threadIdx.x;
   int tid = threadIdx.x;
 
-  // Each thread loads sumd of two elements from global memory
+  // Each thread loads sum of two elements from global memory
   partialSum[tid] = idx < length ? A[idx] + A[idx + blockDim.x] : 0.0f;
 
   // Block Reduction in Strides - Stop at 32 for final warp reduction later
@@ -169,7 +169,7 @@ __global__ void reduce5(float *A, float *blockSums, const unsigned long long len
   {
     __syncthreads();
 
-    if (tid < stride && (tid + stride < BLOCK_WIDTH))
+    if (tid < stride && (tid + stride < blockDim.x))
     {
       partialSum[tid] += partialSum[tid + stride];
     }
@@ -196,23 +196,9 @@ __global__ void reduce5(float *A, float *blockSums, const unsigned long long len
 }
 
 // 6. Sequential Addressig, Full loop unrolling
-__global__ void reduce6(float *A, float *blockSums, const unsigned long long length)
-{
-  // shared memory is halved, as each thread loads two elements
-  __shared__ float partialSum[BLOCK_WIDTH / 2];
-
-  // Double Block Dimension
-  unsigned long long idx = (blockIdx.x * blockDim.x * 2) + threadIdx.x;
-  int tid = threadIdx.x;
-
-  // Each thread loads sumd of two elements from global memory
-  partialSum[tid] = idx < length ? A[idx] + A[idx + blockDim.x] : 0.0f;
-
-  // TODO:
-}
-
+// Templated Warp Reduction function
 template <unsigned int blockSize>
-__device__ void warpReduce(volatile int *sdata, int tid)
+__device__ void warpReduce(volatile float *sdata, int tid)
 {
   if (blockSize >= 64)
     sdata[tid] += sdata[tid + 32];
@@ -228,20 +214,143 @@ __device__ void warpReduce(volatile int *sdata, int tid)
     sdata[tid] += sdata[tid + 1];
 }
 
-// 7. Sequential Addressig, Multiple elements per thread
-__global__ void reduce7(float *A, float *blockSums, const unsigned long long length)
+// Warp Reduce implemenation using warp shuffle instructions
+__device__ void warpReduceShuffle(float *sdata, int tid)
+{
+  if (tid < 32)
+  {
+    int sum = sdata[tid];
+
+    for (int offset = 32; offset > 0; offset /= 2)
+    {
+      sum += __shfl_down_sync(0xFFFFFFFF, sum, offset);
+    }
+
+    sdata[tid] = sum;
+  }
+}
+
+__global__ void reduce6(float *A, float *blockSums, const unsigned long long length)
 {
   // shared memory is halved, as each thread loads two elements
-  __shared__ float partialSum[BLOCK_WIDTH / 2];
+  extern __shared__ float partialSum[];
 
   // Double Block Dimension
   unsigned long long idx = (blockIdx.x * blockDim.x * 2) + threadIdx.x;
   int tid = threadIdx.x;
 
-  // Each thread loads sumd of two elements from global memory
+  // Each thread loads sum of two elements from global memory
   partialSum[tid] = idx < length ? A[idx] + A[idx + blockDim.x] : 0.0f;
 
-  // TODO:
+  __syncthreads();
+
+  // Fully Unrolled Reduce
+  unsigned int blockSize = blockDim.x;
+
+  if (blockSize >= 512)
+  {
+    // For stride = 256
+    if (tid < 256)
+    {
+      partialSum[tid] += partialSum[tid + 256];
+    }
+    __syncthreads();
+  }
+  if (blockSize >= 256)
+  {
+    // For stride = 128
+    if (tid < 128)
+    {
+      partialSum[tid] += partialSum[tid + 128];
+    }
+    __syncthreads();
+  }
+  if (blockSize >= 128)
+  {
+    // For stride = 64
+    if (tid < 64)
+    {
+      partialSum[tid] += partialSum[tid + 64];
+    }
+    __syncthreads();
+  }
+
+  // For stride = 32
+  if (tid < 32)
+  {
+    warpReduce<BLOCK_WIDTH / 2>(partialSum, tid);
+  }
+
+  __syncthreads();
+
+  // Add block reduce value to global memory
+  if (tid == 0)
+  {
+    blockSums[blockIdx.x] = partialSum[0];
+  }
+}
+
+// 7. Sequential Addressig, load Multiple elements per thread
+__global__ void reduce7(float *A, float *blockSums, const unsigned long long length)
+{
+  // shared memory is halved, as each thread loads two elements
+  extern __shared__ float partialSum[];
+  int tid = threadIdx.x;
+  unsigned int blockSize = blockDim.x;
+  unsigned int gridSize = blockSize * 2 * gridDim.x;
+  unsigned long long idx = (blockIdx.x * blockSize * 2) + threadIdx.x;
+
+  // Each thread loads sum of n elements from global memory
+  while (idx < length)
+  {
+    partialSum[tid] = A[idx] + A[idx + blockSize];
+    idx += gridSize;
+  }
+
+  __syncthreads();
+
+  // Fully Unrolled Reduce
+  if (blockSize >= 512)
+  {
+    // For stride = 256
+    if (tid < 256)
+    {
+      partialSum[tid] += partialSum[tid + 256];
+    }
+    __syncthreads();
+  }
+  if (blockSize >= 256)
+  {
+    // For stride = 128
+    if (tid < 128)
+    {
+      partialSum[tid] += partialSum[tid + 128];
+    }
+    __syncthreads();
+  }
+  if (blockSize >= 128)
+  {
+    // For stride = 64
+    if (tid < 64)
+    {
+      partialSum[tid] += partialSum[tid + 64];
+    }
+    __syncthreads();
+  }
+
+  // For stride = 32
+  if (tid < 32)
+  {
+    warpReduce<BLOCK_WIDTH / 2>(partialSum, tid);
+  }
+
+  __syncthreads();
+
+  // Add block reduce value to global memory
+  if (tid == 0)
+  {
+    blockSums[blockIdx.x] = partialSum[0];
+  }
 }
 
 // Test kernel to play with warp functions
@@ -273,17 +382,6 @@ __global__ void warpPrimitives(float *A, float *result,
       *result = sum;
     }
   }
-
-  // last loop warp reduction at stride = 32
-  // if (tid < 32)
-  // {
-  //   int sum = partialSum[tid];
-
-  //   for (int offset = 32; offset > 0; offset /= 2)
-  //   {
-  //     sum += __shfl_down_sync(0xFFFFFFFF, sum, offset);
-  //   }
-  // }
 }
 
 // 8. Strided Reduction with Atomic Result
@@ -348,7 +446,7 @@ void recursiveReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<floa
 
   // First Reduce
   printKernelConfig(gridDim, blockDim);
-  kernel<<<gridDim, blockDim>>>(d_A.get(), d_blockSums.get(), array_len);
+  kernel<<<gridDim, blockDim, blockDim.x * sizeof(float)>>>(d_A.get(), d_blockSums.get(), array_len);
   cudaDeviceSynchronize();
   // Recursive Reduce
   while (numBlocks > 1)
@@ -359,7 +457,7 @@ void recursiveReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<floa
     CudaMemory<float> d_blockSums_out(gridDim.x * sizeof(float));
 
     printKernelConfig(gridDim, blockDim);
-    kernel<<<gridDim, blockDim>>>(d_blockSums.get(), d_blockSums_out.get(), numBlocks);
+    kernel<<<gridDim, blockDim, blockDim.x * sizeof(float)>>>(d_blockSums.get(), d_blockSums_out.get(), numBlocks);
     cudaDeviceSynchronize();
 
     // Update next
@@ -437,7 +535,7 @@ int main()
       WarpPrimitives,
     };
 
-    Options option = REDUCTION_Sequential_LastUnroll;
+    Options option = REDUCTION_Sequential_MultipleElts;
 
     unsigned long long array_len = 1024 * 1024 * 512;
     size_t mem_size = array_len * sizeof(float);
@@ -488,6 +586,7 @@ int main()
       break;
 
     case REDUCTION_Sequential_MultipleElts:
+      recursiveReduceLauncher(reduce7, h_A, d_A, array_len, true);
       break;
 
     case REDUCTION_Atomic:
