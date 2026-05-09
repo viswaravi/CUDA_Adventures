@@ -7,6 +7,14 @@ This repository contains a series of progressively advancing CUDA programming ta
 ### **1. Vector Addition**
 **Goal:** Refresh the CUDA fundamentals and implement basic vector addition kernels. Kernel profiling using NSight Compute and NSight Systems.
 
+#### What have I done
+- Project Setup
+- Basic Error Handling and Memory Cleanup
+- Paged Memory vs Pinned Memory
+- Chunk Processing of large data
+- Multi Stream execution for large data processing speedup
+- profiling and comparing using developer tools
+
 ### **2. Reduction, Prefix Sum**
 **Goal:** Deepen the understanding of memory access patterns and warp-level optimizations and shared memory usage for 1D data. Implement optimized version of kernels and compare performance gains through profiling.
 
