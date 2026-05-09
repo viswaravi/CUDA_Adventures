@@ -300,14 +300,33 @@ __global__ void reduce7(float *A, float *blockSums, const unsigned long long len
   unsigned int gridSize = blockSize * 2 * gridDim.x;
   unsigned long long idx = (blockIdx.x * blockSize * 2) + threadIdx.x;
 
+  unsigned long long originalIdx = idx;
+  if (originalIdx == 0)
+  {
+    printf("gridSize: %d\n", gridSize);
+    printf("length: %d\n", length);
+  }
+
   // Each thread loads sum of n elements from global memory
   while (idx < length)
   {
+    if (originalIdx == 0)
+    {
+      printf("idx: %d, A[idx]: %f, A[idx + blockSize]: %f\n", idx, A[idx], A[idx + blockSize]);
+    }
+
     partialSum[tid] = A[idx] + A[idx + blockSize];
     idx += gridSize;
   }
 
   __syncthreads();
+
+  if (originalIdx == 0)
+  {
+    printf("sum: %f\n", partialSum[0]);
+  }
+
+  assert((partialSum[tid] - 2.0f) == 0.0f);
 
   // Fully Unrolled Reduce
   if (blockSize >= 512)
@@ -425,8 +444,11 @@ void printArray(float *A, const unsigned long long length)
   std::cout << std::endl;
 }
 
-void recursiveReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<float> &d_A, unsigned long long array_len, bool is_half_blocks = false)
+void recursiveReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<float> &d_A, unsigned long long array_len,
+                             bool is_half_blocks = false, bool is_load_multiple = false)
 {
+  double result_cpu = reduceCPU(h_A, array_len);
+
   // Kernel Config
   int blockWidth = BLOCK_WIDTH;
   dim3 blockDim(blockWidth);
@@ -438,6 +460,11 @@ void recursiveReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<floa
     blockDim.x = blockDim.x / 2;
   }
 
+  if (is_load_multiple && gridDim.x > 1)
+  {
+    gridDim.x = gridDim.x / 2;
+  }
+
   // Block Memory for Recursive Reduce
   CudaMemory<float> d_blockSums(gridDim.x * sizeof(float));
   int numBlocks = gridDim.x;
@@ -446,6 +473,7 @@ void recursiveReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<floa
 
   // First Reduce
   printKernelConfig(gridDim, blockDim);
+  std::cout << "Array Len: " << array_len << std::endl;
   kernel<<<gridDim, blockDim, blockDim.x * sizeof(float)>>>(d_A.get(), d_blockSums.get(), array_len);
   cudaDeviceSynchronize();
   // Recursive Reduce
@@ -453,10 +481,17 @@ void recursiveReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<floa
   {
     // Compute new grid dimension
     gridDim.x = (numBlocks + blockWidth - 1) / blockWidth;
+
+    if (is_load_multiple && gridDim.x > 1)
+    {
+      gridDim.x = gridDim.x / 2;
+    }
+
     // New Block Memory - out
     CudaMemory<float> d_blockSums_out(gridDim.x * sizeof(float));
 
     printKernelConfig(gridDim, blockDim);
+    std::cout << "Array Len: " << numBlocks << std::endl;
     kernel<<<gridDim, blockDim, blockDim.x * sizeof(float)>>>(d_blockSums.get(), d_blockSums_out.get(), numBlocks);
     cudaDeviceSynchronize();
 
@@ -465,8 +500,6 @@ void recursiveReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<floa
     numBlocks = gridDim.x;
   }
   CUDA_CALL(cudaMemcpy(result, d_blockSums.get(), sizeof(float), cudaMemcpyDeviceToHost));
-
-  double result_cpu = reduceCPU(h_A, array_len);
 
   std::cout << "Recursive Reduce Result: " << *result << " : " << result_cpu << std::endl;
   assert(std::abs(*result - result_cpu) < 1e-5);
@@ -537,7 +570,7 @@ int main()
 
     Options option = REDUCTION_Sequential_MultipleElts;
 
-    unsigned long long array_len = 1024 * 1024 * 512;
+    unsigned long long array_len = 1024 * 8;
     size_t mem_size = array_len * sizeof(float);
 
     // Host Data Reduction
@@ -586,7 +619,7 @@ int main()
       break;
 
     case REDUCTION_Sequential_MultipleElts:
-      recursiveReduceLauncher(reduce7, h_A, d_A, array_len, true);
+      recursiveReduceLauncher(reduce7, h_A, d_A, array_len, true, true);
       break;
 
     case REDUCTION_Atomic:
@@ -617,3 +650,5 @@ int main()
 
   return EXIT_SUCCESS;
 }
+
+
