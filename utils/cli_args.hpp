@@ -78,6 +78,14 @@ inline int get_int(const RunConfig &cfg, const std::string &flag,
   }
 }
 
+inline std::string get_string(const RunConfig &cfg, const std::string &flag,
+                              const std::string &default_val) {
+  auto it = cfg.extra.find(flag);
+  if (it == cfg.extra.end())
+    return default_val;
+  return it->second;
+}
+
 inline unsigned long long get_ull(const RunConfig &cfg, const std::string &flag,
                                   unsigned long long default_val) {
   auto it = cfg.extra.find(flag);

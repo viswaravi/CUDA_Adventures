@@ -8,7 +8,9 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <vector>
 #include "stb_image_write.h"
+#include "cli_args.hpp"
 #define PI 3.14159265358979323846
 
 // Alignment check function
@@ -512,182 +514,256 @@ __global__ void convolution_2d_shared_struct(float *d_in, float *d_out,
   }
 }
 
-int main()
+enum ConvolutionOption
 {
-  // Choose GPU
-  CUDA_CALL(cudaSetDevice(0));
+  RGB2GREY,
+  TWO_D_CONV_NAIVE,
+  TWO_D_CONV_SHARED_SINGLE,
+  TWO_D_CONV_SHARED_COOP,
+  TWO_D_CONV_SHARED_STRUCT
+};
+
+void run_convolution(ConvolutionOption option, const RunConfig &cfg)
+{
+  const std::string image_path = get_string(cfg, "--image", "res/cuda.png");
+  const int kernel_option = get_int(cfg, "--kernel", 1);
+
+  // Load Image
+  int width, height, channels;
+  unsigned char *h_in_char, *h_out_char;
+
+  h_in_char = stbi_load(image_path.c_str(),
+                        &width, &height, &channels, 0);
+  if (!h_in_char)
+  {
+    throw std::runtime_error(std::string("Error loading image: ") + image_path);
+  }
+
+  // Allocate GPU Memory
+  size_t img_pixel_count = width * height * channels;
+  size_t img_size = img_pixel_count * sizeof(float);
+
+  std::cout << "Image Width: " << width << "  Height:" << height
+            << "  Channels:" << channels << std::endl;
+
+  // Host Data
+  unsigned char *h_out_gray = new unsigned char[width * height];
+  float *h_out_gray_f = new float[width * height];
+
+  h_out_char = new unsigned char[img_pixel_count];
+  float *h_out_cpu, *h_in, *h_out;
+
+  h_out_cpu = (float *)malloc(img_size);
+  h_in = (float *)malloc(img_size);
+  h_out = (float *)malloc(img_size);
+
+  // GPU
+  CudaMemory<float> d_in(img_size);
+  CudaMemory<float> d_out(img_size);
+  CudaMemory<float> d_out_gray(width * height * sizeof(float));
+
+  // Convert Char to Float for precise convolution
+  std::transform(h_in_char, h_in_char + img_pixel_count, h_in,
+                 [](unsigned char pixel)
+                 { return pixel / 255.0f; });
+
+  // Load in GPU
+  CUDA_CALL(cudaMemcpy(d_in.get(), h_in, img_size, cudaMemcpyHostToDevice));
+
+  // Initialize kernel for Convolution
+  float kernel[9];
+  int kernel_len = 3;
+  initialize_kernel(kernel_option, kernel);
+  // Move kernel to GPU
+  size_t kernel_size = kernel_len * kernel_len * sizeof(float);
+  CudaMemory<float> d_kernel(kernel_size);
+  CUDA_CALL(cudaMemcpy(d_kernel.get(), kernel, kernel_size,
+                       cudaMemcpyHostToDevice));
+
+  // Perform GT Conv CPU version
+  convolution_2d_cpu(h_in, h_out_cpu, width, height, channels, kernel,
+                     kernel_len);
+  std::transform(h_out_cpu, h_out_cpu + img_pixel_count, h_out_char,
+                 float_to_uchar);
+  stbi_write_jpg("conv_cpu.jpg", width, height, channels, h_out_char, 100);
+
+  // Perform GPU Variant
+  dim3 blockSize(16, 16);
+  dim3 gridSize((width + blockSize.x - 1) / blockSize.x,
+                (height + blockSize.y - 1) / blockSize.y);
+  int pad = kernel_len / 2;
+  int shared_block_size =
+      ((blockSize.x + 2 * pad) * (blockSize.y + 2 * pad)) *
+      channels; // W * H * C
+
+  printKernelConfig(gridSize, blockSize);
+
+  std::cout << "Host Data Alignment: " << h_is_aligned(h_in, 4) << std::endl;
+
+  std::cout << "Shared Block Size:" << shared_block_size << std::endl;
+
+  switch (option)
+  {
+  case RGB2GREY:
+    rgb_to_gray<<<gridSize, blockSize>>>(d_in.get(), d_out_gray.get(),
+                                         width, height, channels);
+    CUDA_CALL(cudaMemcpy(h_out_gray_f, d_out_gray.get(),
+                         width * height * sizeof(float),
+                         cudaMemcpyDeviceToHost));
+    std::transform(h_out_gray_f, h_out_gray_f + (width * height),
+                   h_out_gray, float_to_uchar);
+    stbi_write_jpg("gray.jpg", width, height, 1, h_out_gray, 100);
+    break;
+
+  // Convolution
+  case TWO_D_CONV_NAIVE:
+    convolution_2d_naive<<<gridSize, blockSize>>>(
+        d_in.get(), d_out.get(), width, height, channels, d_kernel.get(),
+        kernel_len);
+    CUDA_CALL(
+        cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
+    std::transform(h_out, h_out + img_pixel_count, h_out_char,
+                   float_to_uchar);
+    stbi_write_jpg("conv_naive.jpg", width, height, channels, h_out_char,
+                   100);
+    break;
+  case TWO_D_CONV_SHARED_SINGLE:
+    convolution_2d_shared_single<<<gridSize, blockSize,
+                                   shared_block_size * sizeof(float)>>>(
+        d_in.get(), d_out.get(), width, height, channels, d_kernel.get(),
+        kernel_len);
+    CUDA_CALL(
+        cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
+    std::transform(h_out, h_out + img_pixel_count, h_out_char,
+                   float_to_uchar);
+    stbi_write_jpg("conv_shared.jpg", width, height, channels, h_out_char,
+                   100);
+    break;
+
+  case TWO_D_CONV_SHARED_COOP:
+    convolution_2d_shared_coop<<<gridSize, blockSize,
+                                 shared_block_size * sizeof(float)>>>(
+        d_in.get(), d_out.get(), width, height, channels, d_kernel.get(),
+        kernel_len);
+    CUDA_CALL(
+        cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
+    std::transform(h_out, h_out + img_pixel_count, h_out_char,
+                   float_to_uchar);
+    stbi_write_jpg("conv_shared.jpg", width, height, channels, h_out_char,
+                   100);
+    break;
+
+  case TWO_D_CONV_SHARED_STRUCT:
+    convolution_2d_shared_struct<<<gridSize, blockSize,
+                                   shared_block_size * sizeof(float)>>>(
+        d_in.get(), d_out.get(), width, height, channels, d_kernel.get(),
+        kernel_len);
+    CUDA_CALL(
+        cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
+    std::transform(h_out, h_out + img_pixel_count, h_out_char,
+                   float_to_uchar);
+    stbi_write_jpg("conv_shared.jpg", width, height, channels, h_out_char,
+                   100);
+    break;
+
+  default:
+    break;
+  }
+
+  CUDA_CALL(cudaGetLastError());
+  CUDA_CALL(cudaDeviceSynchronize());
+
+  // Free Memory
+  stbi_image_free(h_in_char);
+  free(h_in);
+  free(h_out);
+  free(h_out_cpu);
+
+  delete[] h_out_gray;
+  delete[] h_out_gray_f;
+  delete[] h_out_char;
+}
+
+int main(int argc, char **argv)
+{
+  const std::vector<ArgSpec> base_args = {
+      {"--image", "path", "res/cuda.png", "Input image path"},
+  };
+
+  const std::vector<ArgSpec> conv_args = {
+      {"--image", "path", "res/cuda.png", "Input image path"},
+      {"--kernel", "int", "1", "Kernel type: 1..5"},
+  };
+
+  const VariantRegistry variants = {
+      {
+          "rgb2gray",
+          "RGB to grayscale conversion",
+          base_args,
+          [](const RunConfig &c)
+          { run_convolution(RGB2GREY, c); },
+      },
+      {
+          "conv-naive",
+          "Naive global-memory 2D convolution",
+          conv_args,
+          [](const RunConfig &c)
+          { run_convolution(TWO_D_CONV_NAIVE, c); },
+      },
+      {
+          "conv-shared-single",
+          "Single-thread tile loading shared-memory convolution",
+          conv_args,
+          [](const RunConfig &c)
+          { run_convolution(TWO_D_CONV_SHARED_SINGLE, c); },
+      },
+      {
+          "conv-shared-coop",
+          "Cooperative tile loading shared-memory convolution",
+          conv_args,
+          [](const RunConfig &c)
+          { run_convolution(TWO_D_CONV_SHARED_COOP, c); },
+      },
+      {
+          "conv-shared-struct",
+          "Structured halo-loading shared-memory convolution",
+          conv_args,
+          [](const RunConfig &c)
+          { run_convolution(TWO_D_CONV_SHARED_STRUCT, c); },
+      },
+  };
 
   try
   {
-    enum Options
+    RunConfig cfg = parse_args(argc, argv, variants);
+    if (cfg.print_help)
     {
-      RGB2GREY,
-      TWO_D_CONV_NAIVE,
-      TWO_D_CONV_SHARED_SINGLE,
-      TWO_D_CONV_SHARED_COOP,
-      TWO_D_CONV_SHARED_STRUCT
-    };
-    Options option = TWO_D_CONV_SHARED_COOP;
-
-    // Load Image
-    int width, height, channels;
-    unsigned char *h_in_char, *h_out_char;
-
-    h_in_char = stbi_load("C:\\Users\\rvisw\\Pictures\\Screenshots\\cuda.png",
-                          &width, &height, &channels, 0);
-    if (!h_in_char)
+      print_usage(argv[0], variants);
+      return EXIT_SUCCESS;
+    }
+    if (cfg.list_variants)
     {
-      throw std::runtime_error(std::string("Error loading image"));
+      print_variants(variants);
+      return EXIT_SUCCESS;
     }
 
-    // Allocate GPU Memory
-    size_t img_pixel_count = width * height * channels;
-    size_t img_size = img_pixel_count * sizeof(float);
-    size_t gray_img_size = width * height * sizeof(unsigned char);
-
-    std::cout << "Image Width: " << width << "  Height:" << height
-              << "  Channels:" << channels << std::endl;
-
-    // Host Data
-    // Gray
-    unsigned char *h_out_gray = new unsigned char[width * height];
-    float *h_out_gray_f = new float[width * height];
-
-    // RGB
-    h_out_char = new unsigned char[img_pixel_count];
-    float *h_out_cpu, *h_in, *h_out;
-
-    h_out_cpu = (float *)malloc(img_size);
-    h_in = (float *)malloc(img_size);
-    h_out = (float *)malloc(img_size);
-
-    // GPU
-    CudaMemory<float> d_in(img_size);
-    CudaMemory<float> d_out(img_size);
-    CudaMemory<float> d_out_gray(width * height * sizeof(float));
-
-    // Convert Char to Float for precise convolution
-    std::transform(h_in_char, h_in_char + img_pixel_count, h_in,
-                   [](unsigned char pixel)
-                   { return pixel / 255.0f; });
-
-    // Load in GPU
-    CUDA_CALL(cudaMemcpy(d_in.get(), h_in, img_size, cudaMemcpyHostToDevice));
-
-    // Initialize kernel for Convolution
-    float kernel[9];
-    int kernel_len = 3;
-    initialize_kernel(1, kernel);
-    // Move kernel to GPU
-    size_t kernel_size = kernel_len * kernel_len * sizeof(float);
-    CudaMemory<float> d_kernel(kernel_size);
-    CUDA_CALL(cudaMemcpy(d_kernel.get(), kernel, kernel_size,
-                         cudaMemcpyHostToDevice));
-
-    // Perform GT Conv CPU version
-    convolution_2d_cpu(h_in, h_out_cpu, width, height, channels, kernel,
-                       kernel_len);
-    std::transform(h_out_cpu, h_out_cpu + img_pixel_count, h_out_char,
-                   float_to_uchar);
-    stbi_write_jpg("conv_cpu.jpg", width, height, channels, h_out_char, 100);
-
-    // Perform GPU Variant
-    dim3 blockSize(16, 16);
-    dim3 gridSize((width + blockSize.x - 1) / blockSize.x,
-                  (height + blockSize.y - 1) / blockSize.y);
-    int pad = kernel_len / 2;
-    int shared_block_size =
-        ((blockSize.x + 2 * pad) * (blockSize.y + 2 * pad)) *
-        channels; // W * H * C
-
-    printKernelConfig(gridSize, blockSize);
-
-    std::cout << "Host Data Alignment: " << h_is_aligned(h_in, 4) << std::endl;
-
-    std::cout << "Shared Block Size:" << shared_block_size << std::endl;
-
-    switch (option)
-    {
-    case RGB2GREY:
-      rgb_to_gray<<<gridSize, blockSize>>>(d_in.get(), d_out_gray.get(),
-                                           width, height, channels);
-      CUDA_CALL(cudaMemcpy(h_out_gray_f, d_out_gray.get(),
-                           width * height * sizeof(float),
-                           cudaMemcpyDeviceToHost));
-      std::transform(h_out_gray_f, h_out_gray_f + (width * height),
-                     h_out_gray, float_to_uchar);
-      stbi_write_jpg("gray.jpg", width, height, 1, h_out_gray, 100);
-      break;
-
-    // Convolution
-    case TWO_D_CONV_NAIVE:
-      convolution_2d_naive<<<gridSize, blockSize>>>(
-          d_in.get(), d_out.get(), width, height, channels, d_kernel.get(),
-          kernel_len);
-      CUDA_CALL(
-          cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
-      std::transform(h_out, h_out + img_pixel_count, h_out_char,
-                     float_to_uchar);
-      stbi_write_jpg("conv_naive.jpg", width, height, channels, h_out_char,
-                     100);
-      break;
-    case TWO_D_CONV_SHARED_SINGLE:
-      convolution_2d_shared_single<<<gridSize, blockSize,
-                                     shared_block_size * sizeof(float)>>>(
-          d_in.get(), d_out.get(), width, height, channels, d_kernel.get(),
-          kernel_len);
-      CUDA_CALL(
-          cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
-      std::transform(h_out, h_out + img_pixel_count, h_out_char,
-                     float_to_uchar);
-      stbi_write_jpg("conv_shared.jpg", width, height, channels, h_out_char,
-                     100);
-      break;
-
-    case TWO_D_CONV_SHARED_COOP:
-      convolution_2d_shared_coop<<<gridSize, blockSize,
-                                   shared_block_size * sizeof(float)>>>(
-          d_in.get(), d_out.get(), width, height, channels, d_kernel.get(),
-          kernel_len);
-      CUDA_CALL(
-          cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
-      std::transform(h_out, h_out + img_pixel_count, h_out_char,
-                     float_to_uchar);
-      stbi_write_jpg("conv_shared.jpg", width, height, channels, h_out_char,
-                     100);
-      break;
-
-    case TWO_D_CONV_SHARED_STRUCT:
-      convolution_2d_shared_struct<<<gridSize, blockSize,
-                                     shared_block_size * sizeof(float)>>>(
-          d_in.get(), d_out.get(), width, height, channels, d_kernel.get(),
-          kernel_len);
-      CUDA_CALL(
-          cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
-      std::transform(h_out, h_out + img_pixel_count, h_out_char,
-                     float_to_uchar);
-      stbi_write_jpg("conv_shared.jpg", width, height, channels, h_out_char,
-                     100);
-      break;
-
-    default:
-      break;
-    }
-
-    // Free Memory
-    stbi_image_free(h_in_char);
-    free(h_in);
-    free(h_out);
-    free(h_out_cpu);
+    // Choose GPU
+    CUDA_CALL(cudaSetDevice(cfg.device));
+    printDeviceDetails();
+    run_variant(cfg, variants);
 
     // cudaDeviceReset - for profiling
-    CUDA_CALL(cudaDeviceReset());
+    if (cfg.reset_device)
+    {
+      CUDA_CALL(cudaDeviceReset());
+    }
   }
-  catch (std::exception &e)
+  catch (const std::exception &e)
   {
-    fprintf(stderr, "Exception: %s\n", e.what());
+    fprintf(stderr, "Error: %s\n", e.what());
+    print_usage(argv[0], variants);
     return EXIT_FAILURE;
   }
 
-  return 0;
+  return EXIT_SUCCESS;
 }

@@ -421,15 +421,6 @@ __global__ void rotation_bbox_strided(float *d_in, float *d_out, int width,
   }
 }
 
-std::string get_string(const RunConfig &cfg, const std::string &flag,
-                       const std::string &default_val)
-{
-  auto it = cfg.extra.find(flag);
-  if (it == cfg.extra.end())
-    return default_val;
-  return it->second;
-}
-
 enum RotationOption
 {
   IMG_ROT_NAIVE,

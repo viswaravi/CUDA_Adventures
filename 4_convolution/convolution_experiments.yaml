@@ -1,0 +1,22 @@
+experiment: convolution
+profilers:
+  ncu:
+    enabled: true
+  nsys:
+    enabled: false
+sweeps:
+  - name: rgb2gray
+    executable: convolution
+    args: [--variant, rgb2gray, --image, res/cuda.png]
+  - name: conv-naive
+    executable: convolution
+    args: [--variant, conv-naive, --image, res/cuda.png, --kernel, "1"]
+  - name: conv-shared-single
+    executable: convolution
+    args: [--variant, conv-shared-single, --image, res/cuda.png, --kernel, "1"]
+  - name: conv-shared-coop
+    executable: convolution
+    args: [--variant, conv-shared-coop, --image, res/cuda.png, --kernel, "1"]
+  - name: conv-shared-struct
+    executable: convolution
+    args: [--variant, conv-shared-struct, --image, res/cuda.png, --kernel, "1"]
