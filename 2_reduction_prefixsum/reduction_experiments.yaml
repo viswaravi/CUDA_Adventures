@@ -1,0 +1,67 @@
+experiment: reduction
+
+profilers:
+  ncu:
+    replay-mode: kernel
+    profiler-set: detailed
+    sections: []
+    args: []
+  nsys:
+    trace: cuda,nvtx,osrt
+    sample: none
+    args: []
+
+sweeps:
+  - variant: interleaved-divergent
+    label: small
+    notes: Interleaved addressing with divergent branches.
+    args:
+      n: 8192
+
+  - variant: interleaved-bank-conflicts
+    label: small
+    notes: Interleaved addressing with bank conflicts.
+    args:
+      n: 8192
+
+  - variant: sequential-idle
+    label: small
+    notes: Sequential addressing with idle threads.
+    args:
+      n: 8192
+
+  - variant: sequential-add-load
+    label: small
+    notes: Add-during-load optimization.
+    args:
+      n: 8192
+
+  - variant: sequential-last-unroll
+    label: small
+    notes: Last warp loop unrolled.
+    args:
+      n: 8192
+
+  - variant: sequential-full-unroll
+    label: small
+    notes: Full unrolled reduction.
+    args:
+      n: 8192
+
+  - variant: sequential-multiple
+    label: small
+    notes: Fully optimized baseline with multiple elements per thread.
+    args:
+      n: 8192
+
+  - variant: sequential-multiple
+    label: medium
+    notes: Medium workload for reduction baseline.
+    args:
+      n: 1048576
+
+  - variant: atomic
+    label: small
+    notes: Atomic accumulation baseline.
+    args:
+      n: 8192

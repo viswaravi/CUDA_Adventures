@@ -12,6 +12,8 @@
 #include <iostream>
 #include <random>
 #include <string>
+#include <vector>
+#include "cli_args.hpp"
 #define BLOCK_WIDTH 1024
 #define FULL_MASK 0xffffffff
 
@@ -151,7 +153,7 @@ __global__ void reduce4(float *A, float *blockSums, const unsigned long long len
   }
 }
 
-// 5. Sequential Addressig, Loop unrolling last loop
+// 5. Sequential Addressing, Loop unrolling last loop
 __global__ void reduce5(float *A, float *blockSums, const unsigned long long length)
 {
   // shared memory is halved, as each thread loads two elements
@@ -547,104 +549,192 @@ void atomicReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<float> 
   free(result);
 }
 
-int main()
+int main(int argc, char **argv)
 {
-  // Choose GPU
-  CUDA_CALL(cudaSetDevice(0));
+  const std::vector<ArgSpec> reduction_args = {
+      {"--n", "uint64", "8192", "Array length (elements)"},
+  };
+
+  const VariantRegistry variants = {
+      {
+          "interleaved-divergent",
+          "Interleaved addressing with divergent branches",
+          reduction_args,
+          [](const RunConfig &c)
+          {
+            unsigned long long array_len = get_ull(c, "--n", 8192ULL);
+            size_t mem_size = array_len * sizeof(float);
+            float *h_A = (float *)malloc(mem_size);
+            std::fill(h_A, h_A + array_len, 1.0f);
+            CudaMemory<float> d_A(mem_size);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size, cudaMemcpyHostToDevice));
+            recursiveReduceLauncher(reduce1, h_A, d_A, array_len);
+            free(h_A);
+          },
+      },
+      {
+          "interleaved-bank-conflicts",
+          "Interleaved addressing without divergent branches",
+          reduction_args,
+          [](const RunConfig &c)
+          {
+            unsigned long long array_len = get_ull(c, "--n", 8192ULL);
+            size_t mem_size = array_len * sizeof(float);
+            float *h_A = (float *)malloc(mem_size);
+            std::fill(h_A, h_A + array_len, 1.0f);
+            CudaMemory<float> d_A(mem_size);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size, cudaMemcpyHostToDevice));
+            recursiveReduceLauncher(reduce2, h_A, d_A, array_len);
+            free(h_A);
+          },
+      },
+      {
+          "sequential-idle",
+          "Sequential addressing with idle threads",
+          reduction_args,
+          [](const RunConfig &c)
+          {
+            unsigned long long array_len = get_ull(c, "--n", 8192ULL);
+            size_t mem_size = array_len * sizeof(float);
+            float *h_A = (float *)malloc(mem_size);
+            std::fill(h_A, h_A + array_len, 1.0f);
+            CudaMemory<float> d_A(mem_size);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size, cudaMemcpyHostToDevice));
+            recursiveReduceLauncher(reduce3, h_A, d_A, array_len);
+            free(h_A);
+          },
+      },
+      {
+          "sequential-add-load",
+          "Sequential addressing with add-during-load",
+          reduction_args,
+          [](const RunConfig &c)
+          {
+            unsigned long long array_len = get_ull(c, "--n", 8192ULL);
+            size_t mem_size = array_len * sizeof(float);
+            float *h_A = (float *)malloc(mem_size);
+            std::fill(h_A, h_A + array_len, 1.0f);
+            CudaMemory<float> d_A(mem_size);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size, cudaMemcpyHostToDevice));
+            recursiveReduceLauncher(reduce4, h_A, d_A, array_len, true);
+            free(h_A);
+          },
+      },
+      {
+          "sequential-last-unroll",
+          "Sequential addressing with last-warp loop unrolling",
+          reduction_args,
+          [](const RunConfig &c)
+          {
+            unsigned long long array_len = get_ull(c, "--n", 8192ULL);
+            size_t mem_size = array_len * sizeof(float);
+            float *h_A = (float *)malloc(mem_size);
+            std::fill(h_A, h_A + array_len, 1.0f);
+            CudaMemory<float> d_A(mem_size);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size, cudaMemcpyHostToDevice));
+            recursiveReduceLauncher(reduce5, h_A, d_A, array_len, true);
+            free(h_A);
+          },
+      },
+      {
+          "sequential-full-unroll",
+          "Sequential addressing with full unrolling",
+          reduction_args,
+          [](const RunConfig &c)
+          {
+            unsigned long long array_len = get_ull(c, "--n", 8192ULL);
+            size_t mem_size = array_len * sizeof(float);
+            float *h_A = (float *)malloc(mem_size);
+            std::fill(h_A, h_A + array_len, 1.0f);
+            CudaMemory<float> d_A(mem_size);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size, cudaMemcpyHostToDevice));
+            recursiveReduceLauncher(reduce6, h_A, d_A, array_len, true);
+            free(h_A);
+          },
+      },
+       {
+          "sequential-multiple",
+          "Sequential addressing with multiple elements per thread",
+          reduction_args,
+          [](const RunConfig &c)
+          {
+            unsigned long long array_len = get_ull(c, "--n", 8192ULL);
+            size_t mem_size = array_len * sizeof(float);
+            float *h_A = (float *)malloc(mem_size);
+            std::fill(h_A, h_A + array_len, 1.0f);
+            CudaMemory<float> d_A(mem_size);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size, cudaMemcpyHostToDevice));
+            recursiveReduceLauncher(reduce7, h_A, d_A, array_len, true, true);
+            free(h_A);
+          },
+      },
+      {
+          "atomic",
+          "Strided reduction using global atomic accumulation",
+          reduction_args,
+          [](const RunConfig &c)
+          {
+            unsigned long long array_len = get_ull(c, "--n", 8192ULL);
+            size_t mem_size = array_len * sizeof(float);
+            float *h_A = (float *)malloc(mem_size);
+            std::fill(h_A, h_A + array_len, 1.0f);
+            CudaMemory<float> d_A(mem_size);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size, cudaMemcpyHostToDevice));
+            atomicReduceLauncher(reduceAtomic, h_A, d_A, array_len);
+            free(h_A);
+          },
+      },
+      {
+          "warp-primitives",
+          "Reduction using warp-level primitives",
+          reduction_args,
+          [](const RunConfig &c)
+          {
+            unsigned long long array_len = get_ull(c, "--n", 8192ULL);
+            size_t mem_size = array_len * sizeof(float);
+            float *h_A = (float *)malloc(mem_size);
+            std::fill(h_A, h_A + array_len, 1.0f);
+            CudaMemory<float> d_A(mem_size);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size, cudaMemcpyHostToDevice));
+            CudaMemory<float> d_result(sizeof(float));
+            warpPrimitives<<<1, 32>>>(d_A.get(), d_result.get(), array_len);
+            cudaDeviceSynchronize();
+            float h_result;
+            CUDA_CALL(cudaMemcpy(&h_result, d_result.get(), sizeof(float), cudaMemcpyDeviceToHost));
+            std::cout << "Warp Primitives Reduce Result: " << h_result << std::endl;
+            assert(std::abs(h_result - 32.0f) < 1e-5);
+            free(h_A);
+          },
+      },
+  };
 
   try
   {
-    enum Options
+    RunConfig cfg = parse_args(argc, argv, variants);
+    if (cfg.print_help)
     {
-      REDUCTION_Interleaved_Divergent,
-      REDUCTION_Interleaved_BankConflicts,
-      REDUCTION_Sequential_Idle,
-      REDUCTION_Sequential_AddLoad,
-      REDUCTION_Sequential_LastUnroll,
-      REDUCTION_Sequential_FullUnroll,
-      REDUCTION_Sequential_MultipleElts,
-
-      REDUCTION_Atomic,
-      WarpPrimitives,
-    };
-
-    Options option = REDUCTION_Sequential_MultipleElts;
-
-    unsigned long long array_len = 1024 * 8;
-    size_t mem_size = array_len * sizeof(float);
-
-    // Host Data Reduction
-    float *h_A;
-    h_A = (float *)malloc(mem_size);
-
-    // Initialize Host Data
-    std::fill(h_A, h_A + array_len, 1);
-
-    // Device Data
-    CudaMemory<float> d_A(mem_size), d_result(sizeof(float)), d_result_scan(mem_size);
-
-    // Copy to Device
-    CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size, cudaMemcpyHostToDevice));
-
-    // kernel config for double procesing
-    // int block_size = array_len / 2; // process using half the threads
-    // int shared_size = array_len * sizeof(float);
-    // dim3 blockDimD(block_size);
-    // dim3 gridDimD((block_size + block_size - 1) / block_size);
-
-    switch (option)
+      print_usage(argv[0], variants);
+      return EXIT_SUCCESS;
+    }
+    if (cfg.list_variants)
     {
-    case REDUCTION_Interleaved_Divergent:
-      recursiveReduceLauncher(reduce1, h_A, d_A, array_len);
-      break;
-
-    case REDUCTION_Interleaved_BankConflicts:
-      recursiveReduceLauncher(reduce2, h_A, d_A, array_len);
-      break;
-
-    case REDUCTION_Sequential_Idle:
-      recursiveReduceLauncher(reduce3, h_A, d_A, array_len);
-      break;
-
-    case REDUCTION_Sequential_AddLoad:
-      recursiveReduceLauncher(reduce4, h_A, d_A, array_len, true);
-      break;
-
-    case REDUCTION_Sequential_LastUnroll:
-      recursiveReduceLauncher(reduce5, h_A, d_A, array_len, true);
-      break;
-
-    case REDUCTION_Sequential_FullUnroll:
-      recursiveReduceLauncher(reduce6, h_A, d_A, array_len, true);
-      break;
-
-    case REDUCTION_Sequential_MultipleElts:
-      recursiveReduceLauncher(reduce7, h_A, d_A, array_len, true, true);
-      break;
-
-    case REDUCTION_Atomic:
-      atomicReduceLauncher(reduceAtomic, h_A, d_A, array_len);
-      break;
-
-      // Test kernel
-      // case WarpPrimitives:
-      // warpPrimitives<<<gridDim, blockDim>>>(d_A.get(), d_result.get(), array_len);
-      // CUDA_CALL(cudaMemcpy(result, d_result.get(), sizeof(float), cudaMemcpyDeviceToHost));
-      // std::cout << "Atomic Reduce Result: " << *result << std::endl;
-      // break;
-
-    default:
-      break;
+      print_variants(variants);
+      return EXIT_SUCCESS;
     }
 
-    // Free memory
-    free(h_A);
-    // cudaDeviceReset - for profiling
-    CUDA_CALL(cudaDeviceReset());
+    CUDA_CALL(cudaSetDevice(cfg.device));
+    printDeviceDetails();
+    run_variant(cfg, variants);
+
+    if (cfg.reset_device)
+    {
+      CUDA_CALL(cudaDeviceReset());
+    }
   }
-  catch (std::exception &e)
+  catch (const std::exception &e)
   {
-    fprintf(stderr, "Exception: %s\n", e.what());
+    fprintf(stderr, "Error: %s\n", e.what());
+    print_usage(argv[0], variants);
     return EXIT_FAILURE;
   }
 

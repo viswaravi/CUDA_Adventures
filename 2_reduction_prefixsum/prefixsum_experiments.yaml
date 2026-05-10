@@ -1,0 +1,43 @@
+experiment: prefixsum
+
+profilers:
+  ncu:
+    replay-mode: application
+    profiler-set: detailed
+    sections: []
+    args: []
+  nsys:
+    trace: cuda,nvtx,osrt
+    sample: none
+    args: []
+
+sweeps:
+  - variant: naive
+    label: small
+    notes: Naive inclusive scan baseline.
+    args:
+      n: 1024
+
+  - variant: fast
+    label: small
+    notes: Tree-based inclusive scan.
+    args:
+      n: 1024
+
+  - variant: fast2
+    label: small
+    notes: Index-based tree inclusive scan.
+    args:
+      n: 1024
+
+  - variant: double
+    label: small
+    notes: Two elements per thread.
+    args:
+      n: 1024
+
+  - variant: hier
+    label: medium
+    notes: Hierarchical multi-block inclusive scan.
+    args:
+      n: 1048576

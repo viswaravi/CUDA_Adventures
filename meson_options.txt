@@ -8,6 +8,13 @@ option(
 option(
   'enable_profiling_build',
   type: 'boolean',
-  value: false,
+  value: true,
   description: 'Build for profiling (no -G), keep line info for source/PTX mapping',
+)
+
+option(
+  'enable_cubin_export',
+  type: 'boolean',
+  value: false,
+  description: 'Export CUBIN files for vector addition and other kernels',
 )
