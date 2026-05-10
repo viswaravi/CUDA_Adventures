@@ -1,0 +1,71 @@
+# Vector-add experiment matrix.
+#
+# This file is consumed only by the Python matrix runner, so YAML comments are
+# useful for documenting the purpose of each sweep group.
+experiment: vec_add
+
+sweeps:
+  # Basic memory-transfer variants
+  - variant: pageable
+    label: small
+    notes: Pageable host memory, smaller working set.
+    args:
+      n: 67108864
+
+  - variant: pageable
+    label: medium
+    notes: Pageable host memory, medium working set.
+    args:
+      n: 268435456
+
+  - variant: pinned
+    label: small
+    notes: Pinned host memory, smaller working set.
+    args:
+      n: 67108864
+
+  - variant: pinned
+    label: medium
+    notes: Pinned host memory, medium working set.
+    args:
+      n: 268435456
+
+  # Chunked pageable-memory experiments
+  - variant: pageable-large
+    label: chunk-256m
+    notes: Chunked pageable memory with a moderate data size.
+    args:
+      n: 268435456
+      free-mem-threshold: 0.2
+
+  - variant: pageable-large
+    label: chunk-512m
+    notes: Chunked pageable memory with a larger data size.
+    args:
+      n: 536870912
+      free-mem-threshold: 0.2
+
+  # Streamed large-array experiments
+  - variant: streamed-large
+    label: s2-256m
+    notes: Multi-stream run with 2 streams.
+    args:
+      n: 268435456
+      free-mem-threshold: 0.2
+      streams: 2
+
+  - variant: streamed-large
+    label: s4-256m
+    notes: Multi-stream run with 4 streams.
+    args:
+      n: 268435456
+      free-mem-threshold: 0.2
+      streams: 4
+
+  - variant: streamed-large
+    label: s8-512m
+    notes: Multi-stream run with 8 streams.
+    args:
+      n: 536870912
+      free-mem-threshold: 0.2
+      streams: 8
