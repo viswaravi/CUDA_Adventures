@@ -18,7 +18,7 @@
 void printMemoryRequirements(unsigned long long array_len,
                              unsigned long long chunk_len = 0)
 {
-  long double array_size_bytes = array_len * sizeof(float);
+  long double array_size_bytes = array_len * sizeof(int);
   long double array_size_gbytes = array_size_bytes / (1024 * 1024 * 1024);
   long double array_size_mbytes = array_size_bytes / (1024 * 1024);
 
@@ -29,7 +29,7 @@ void printMemoryRequirements(unsigned long long array_len,
 
   if (chunk_len > 0)
   {
-    long double chunk_size_bytes = chunk_len * sizeof(float);
+    long double chunk_size_bytes = chunk_len * sizeof(int);
     long double chunk_size_gbytes = chunk_size_bytes / (1024 * 1024 * 1024);
     long double chunk_size_mbytes = chunk_size_bytes / (1024 * 1024);
 
@@ -317,8 +317,12 @@ void streamedVectorAdditionLarge(unsigned long long array_len,
   assert(chunk_len >= MAX_BLOCK_DIM);
   size_t chunk_mem_size = chunk_len * sizeof(int);
 
+   // Total number of chunks to be processed
+  size_t chunk_num = array_len / chunk_len;
+  std::cout << "Number of Chunks: " << chunk_num << std::endl;
   std::cout << "Chunk Length: " << chunk_len << std::endl;
   std::cout << "Host Initialized -> Launching Kernels" << std::endl;
+
 
   // Create Streams
   std::vector<cudaStream_t> streams(num_streams);
@@ -401,6 +405,7 @@ void streamedVectorAdditionLarge(unsigned long long array_len,
 
 int main(int argc, char **argv)
 {
+  // Define CLI Args for each variant
   const std::vector<ArgSpec> pageable_args = {
     {"--n", "uint64", "268435456", "Array length (elements)"},
   };
@@ -420,6 +425,7 @@ int main(int argc, char **argv)
      "Number of concurrent CUDA streams"},
   };
 
+  // Define Variants using the CLI Args and corresponding functions to execute
   const VariantRegistry variants = {
     {
       "pageable",
@@ -467,16 +473,23 @@ int main(int argc, char **argv)
 
   try
   {
+    // Parse CLI Args
     RunConfig cfg = parse_args(argc, argv, variants);
-
     if (cfg.print_help)    { print_usage(argv[0], variants); return EXIT_SUCCESS; }
     if (cfg.list_variants) { print_variants(variants);        return EXIT_SUCCESS; }
 
+    // Set CUDA Device
     CUDA_CALL(cudaSetDevice(cfg.device));
     printDeviceDetails();
+
+    // Run the selected variant with the provided config
     run_variant(cfg, variants);
 
-    if (cfg.reset_device) { CUDA_CALL(cudaDeviceReset()); }
+    // Reset device after execution to clean up resources
+    if (cfg.reset_device) 
+    { 
+      CUDA_CALL(cudaDeviceReset()); 
+    }
   }
   catch (const std::exception &e)
   {

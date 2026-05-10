@@ -2,7 +2,7 @@
 #
 # This file is consumed only by the Python matrix runner, so YAML comments are
 # useful for documenting the purpose of each sweep group.
-experiment: vec_add
+experiment: vector_addiition
 
 sweeps:
   # Basic memory-transfer variants

@@ -42,3 +42,136 @@ This repository contains a series of progressively advancing CUDA programming ta
 
 ### **10. Multi-GPU Training & NCCL Optimization (Project 8)**
 **Goal:** Scale the  optimizations across multiple GPUs for training large models. -->
+
+---
+
+## Compiling
+
+All tasks share a common build system based on Meson. Each task directory contains a `meson.build` file defining the build targets for that task. To compile the binaries for a task, run:
+```bash
+meson setup build
+
+# Compile all targets
+meson compile -C build
+
+# Or compile a specific target
+meson compile -C build <target-name>
+```
+
+---
+
+## Profiling
+
+Reports are stored under `profiling/<experiment>/<tool>/<variant>/<label>/`.
+
+### Prerequisites
+
+Activate the project virtual environment once before running any profiling commands:
+
+```bash
+source activate
+```
+
+---
+
+### Single-shot profiling with custom args (`profile_runner.py`)
+
+Thin wrapper — pass explicit args, get a timestamped report. No YAML awareness.
+
+**Syntax**
+```bash
+python tools/profile_runner.py \
+  --tool <ncu|nsys> \
+  --profiler-bin <path-to-profiler> \
+  --binary <path-to-binary> \
+  --output-dir <output-directory> \
+  --report-stem <report-name> \
+  -- <binary-args...>
+```
+
+**Example — NCU, `pageable/small`**
+```bash
+python tools/profile_runner.py \
+  --tool ncu \
+  --profiler-bin /usr/bin/ncu \
+  --binary ./build/1_vector_addition/vec_add \
+  --output-dir profiling/vec_add/ncu/pageable/small \
+  --report-stem pageable_small \
+  -- --variant pageable --n 67108864
+```
+
+**Example — NSYS, `pinned/medium`**
+```bash
+python tools/profile_runner.py \
+  --tool nsys \
+  --profiler-bin /usr/bin/nsys \
+  --binary ./build/1_vector_addition/vec_add \
+  --output-dir profiling/vec_add/nsys/pinned/medium \
+  --report-stem pinned_medium \
+  -- --variant pinned --n 268435456
+```
+
+---
+
+### Full experiment matrix sweep (`profile_matrix_runner.py`)
+
+Runs all sweep entries defined in a YAML experiment matrix in sequence.
+Output paths are derived automatically from the matrix metadata — no manual path construction needed.
+
+**Syntax**
+```bash
+python tools/profile_matrix_runner.py \
+  --matrix <path-to-yaml> \
+  --tool <ncu|nsys> \
+  --binary <path-to-binary> \
+  [--profiler-bin <path>]   # defaults: ncu=/usr/bin/ncu, nsys=/usr/bin/nsys \
+  [--output-dir <dir>]      # default: profiling \
+  [--build-tag <tag>]       # default: dev \
+  [--label <label>]         # run only this entry (single-shot mode) \
+  [--variant <variant>]     # disambiguate when multiple entries share the same label
+```
+
+**Example — NCU sweep over all vec_add experiments**
+```bash
+python tools/profile_matrix_runner.py \
+  --matrix 1_vector_addition/vec_add_experiments.yaml \
+  --tool ncu \
+  --binary ./build/1_vector_addition/vec_add
+```
+
+**Example — NSYS sweep with a custom build tag**
+```bash
+python tools/profile_matrix_runner.py \
+  --matrix 1_vector_addition/vec_add_experiments.yaml \
+  --tool nsys \
+  --binary ./build/1_vector_addition/vec_add \
+  --build-tag v1
+```
+
+**Example — NCU, single entry by label + variant**
+
+Use `--label` to pick one entry from the matrix without writing an ad-hoc YAML file.
+If two entries have the same label (e.g. both `pageable` and `pinned` have `label: small`), add `--variant` to disambiguate.
+
+```bash
+# pageable/small only
+python tools/profile_matrix_runner.py \
+  --matrix 1_vector_addition/vec_add_experiments.yaml \
+  --tool ncu \
+  --binary ./build/1_vector_addition/vec_add \
+  --variant pageable \
+  --label small
+```
+
+```bash
+# streamed-large/s4-256m only
+python tools/profile_matrix_runner.py \
+  --matrix 1_vector_addition/vec_add_experiments.yaml \
+  --tool ncu \
+  --binary ./build/1_vector_addition/vec_add \
+  --label s4-256m
+```
+
+Reports land at `profiling/vec_add/ncu/<variant>/<label>/`.
+
+---

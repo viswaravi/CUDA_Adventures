@@ -32,6 +32,12 @@ def parse_args() -> argparse.Namespace:
                         help='Build tag used in report stems')
     parser.add_argument('--profile-runner', default=None,
                         help='Optional path to profile_runner.py')
+
+    # Single-entry mode
+    parser.add_argument('--label', default=None,
+                        help='Run only the entry with this label (instead of the full sweep).')
+    parser.add_argument('--variant', default=None,
+                        help='Disambiguate when multiple entries share the same label.')
     return parser.parse_args()
 
 
@@ -115,6 +121,29 @@ def main() -> int:
     if not entries:
         print(f'No experiment entries found in {matrix_path}')
         return 0
+
+    # Filter to a single entry when --label is given
+    if args.label:
+        filtered = [
+            e for e in entries
+            if str(e.get('label', '')) == args.label
+            and (args.variant is None or str(e.get('variant', '')) == args.variant)
+        ]
+        if not filtered:
+            hint = f'label={args.label!r}' + \
+                (f', variant={args.variant!r}' if args.variant else '')
+            print(
+                f'error: no entry found for {hint} in {matrix_path}', file=sys.stderr)
+            return 2
+        if len(filtered) > 1:
+            names = [f"variant={e.get('variant')!r}" for e in filtered]
+            print(
+                f'error: multiple entries match label={args.label!r}: {", ".join(names)}. '
+                'Use --variant to disambiguate.',
+                file=sys.stderr,
+            )
+            return 2
+        entries = filtered
 
     experiment_dir = output_root / slugify(experiment_name)
     tool_dir = experiment_dir / slugify(args.tool)
