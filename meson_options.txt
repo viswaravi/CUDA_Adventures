@@ -1,0 +1,13 @@
+option(
+  'gpu_arch',
+  type: 'string',
+  value: 'sm_75',
+  description: 'Default CUDA architecture, e.g. sm_75, sm_86',
+)
+
+option(
+  'enable_profiling_build',
+  type: 'boolean',
+  value: false,
+  description: 'Build for profiling (no -G), keep line info for source/PTX mapping',
+)

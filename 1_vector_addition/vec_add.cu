@@ -4,12 +4,15 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <algorithm>
 #include <exception>
 #include <iomanip>
 #include <iostream>
 #include <random>
 #include <string>
+#include <vector>
 #include "utils.cuh"
+#include "cli_args.hpp"
 #define MAX_BLOCK_DIM 1024
 
 void printMemoryRequirements(unsigned long long array_len,
@@ -28,7 +31,7 @@ void printMemoryRequirements(unsigned long long array_len,
   {
     long double chunk_size_bytes = chunk_len * sizeof(float);
     long double chunk_size_gbytes = chunk_size_bytes / (1024 * 1024 * 1024);
-    long double chunk_size_mbytes = chunk_size_gbytes / (1024 * 1024);
+    long double chunk_size_mbytes = chunk_size_bytes / (1024 * 1024);
 
     std::cout << "Chunk Length: " << chunk_len << std::endl;
     std::cout << "GPU  Chunk Per Array Memory: " << chunk_size_gbytes << " GB"
@@ -276,19 +279,20 @@ void pageableMemoryAdditionLarge(unsigned long long array_len,
 
 // Option 4
 void streamedVectorAdditionLarge(unsigned long long array_len,
-                                 float free_mem_threshold = 0.2)
+                                 float free_mem_threshold = 0.2,
+                                 int num_streams = 4)
 {
-  const int num_streams = 4;
   assert(free_mem_threshold <= 1);
+  assert(num_streams > 0);
 
   // Host Data
   int *h_A, *h_B, *h_C;
   size_t mem_size = array_len * sizeof(int);
 
   // Device Data pinned memory for streams
-  cudaMallocHost(&h_A, mem_size);
-  cudaMallocHost(&h_B, mem_size);
-  cudaMallocHost(&h_C, mem_size);
+  CUDA_CALL(cudaMallocHost(&h_A, mem_size));
+  CUDA_CALL(cudaMallocHost(&h_B, mem_size));
+  CUDA_CALL(cudaMallocHost(&h_C, mem_size));
 
   // Initialize Host Data
   std::fill(h_A, h_A + array_len, 42);
@@ -310,24 +314,24 @@ void streamedVectorAdditionLarge(unsigned long long array_len,
 
   // Making sure chunks can be divided into max block dim
   unsigned long long chunk_len = chunk_max_len - (chunk_max_len % MAX_BLOCK_DIM);
-  int chunk_mem_size = chunk_len * sizeof(int);
+  assert(chunk_len >= MAX_BLOCK_DIM);
+  size_t chunk_mem_size = chunk_len * sizeof(int);
 
-  // Total number of chunks to be processed
-  size_t chunk_num = array_len / chunk_len;
-
-  std::cout << "Number of Chunks: " << chunk_num << std::endl;
+  std::cout << "Chunk Length: " << chunk_len << std::endl;
+  std::cout << "Host Initialized -> Launching Kernels" << std::endl;
 
   // Create Streams
-  cudaStream_t streams[num_streams];
+  std::vector<cudaStream_t> streams(num_streams);
   for (int i = 0; i < num_streams; i++)
   {
-    cudaStreamCreate(&streams[i]);
+    CUDA_CALL(cudaStreamCreate(&streams[i]));
   }
-
-  std::cout << "Host Initialized -> Launching Kernels" << std::endl;
 
   // Device Storage Data for each stream
   std::vector<CudaMemory<int>> dev_a, dev_b, dev_c;
+  dev_a.reserve(num_streams);
+  dev_b.reserve(num_streams);
+  dev_c.reserve(num_streams);
   for (int i = 0; i < num_streams; ++i)
   {
     dev_a.emplace_back(chunk_mem_size);
@@ -335,35 +339,41 @@ void streamedVectorAdditionLarge(unsigned long long array_len,
     dev_c.emplace_back(chunk_mem_size);
   }
 
-  dim3 blockDim(MAX_BLOCK_DIM);
-  dim3 gridDim((chunk_len + blockDim.x - 1) / blockDim.x);
-
   // Process Vector in Stream Chunks
-  for (int chunk_index = 0; chunk_index < chunk_num; chunk_index = chunk_index + num_streams)
+  for (unsigned long long chunk_start = 0; chunk_start < array_len;
+       chunk_start += (chunk_len * num_streams))
   {
     for (int stream_index = 0; stream_index < num_streams; stream_index++)
     {
-      int chunk_offset = (chunk_index + stream_index) * chunk_len;
-      // std::cout << "Chunk:" << chunk_index << "  Offset:" << chunk_offset << std::endl;
+      unsigned long long chunk_offset = chunk_start + (stream_index * chunk_len);
+      if (chunk_offset >= array_len)
+      {
+        break;
+      }
+
+      unsigned long long current_chunk_len =
+          std::min(chunk_len, array_len - chunk_offset);
+      size_t current_chunk_mem_size = current_chunk_len * sizeof(int);
+      dim3 blockDim(MAX_BLOCK_DIM);
+      dim3 gridDim((current_chunk_len + blockDim.x - 1) / blockDim.x);
 
       // Transfer Data to GPU Stream
       CUDA_CALL(cudaMemcpyAsync(dev_a[stream_index].get(), h_A + chunk_offset,
-                                chunk_mem_size, cudaMemcpyHostToDevice,
+                                current_chunk_mem_size, cudaMemcpyHostToDevice,
                                 streams[stream_index]));
       CUDA_CALL(cudaMemcpyAsync(dev_b[stream_index].get(), h_B + chunk_offset,
-                                chunk_mem_size, cudaMemcpyHostToDevice,
+                                current_chunk_mem_size, cudaMemcpyHostToDevice,
                                 streams[stream_index]));
 
       // Kernel call
       addKernel<<<gridDim, blockDim, 0, streams[stream_index]>>>(
           dev_c[stream_index].get(), dev_a[stream_index].get(),
-          dev_b[stream_index].get(), chunk_len);
-      // Check for any errors launching the kernel
+          dev_b[stream_index].get(), current_chunk_len);
       CUDA_CALL(cudaGetLastError());
 
       // Transfer back to Host
       CUDA_CALL(cudaMemcpyAsync(h_C + chunk_offset, dev_c[stream_index].get(),
-                                chunk_mem_size, cudaMemcpyDeviceToHost,
+                                current_chunk_mem_size, cudaMemcpyDeviceToHost,
                                 streams[stream_index]));
     }
   }
@@ -371,83 +381,107 @@ void streamedVectorAdditionLarge(unsigned long long array_len,
   // Wait until streams are done
   for (int i = 0; i < num_streams; i++)
   {
-    cudaStreamSynchronize(streams[i]);
+    CUDA_CALL(cudaStreamSynchronize(streams[i]));
   }
 
   // Destroy Streams
   for (int i = 0; i < num_streams; i++)
   {
-    cudaStreamDestroy(streams[i]);
+    CUDA_CALL(cudaStreamDestroy(streams[i]));
   }
 
+  std::cout << "Result: " << h_C[0] << " " << h_C[array_len - 1] << std::endl;
+
   // free host memory
-  cudaFreeHost(h_A);
-  cudaFreeHost(h_B);
-  cudaFreeHost(h_C);
+  CUDA_CALL(cudaFreeHost(h_A));
+  CUDA_CALL(cudaFreeHost(h_B));
+  CUDA_CALL(cudaFreeHost(h_C));
 }
 
-int main()
-{
-  // Choose GPU
-  CUDA_CALL(cudaSetDevice(0));
 
-  printDeviceDetails();
+int main(int argc, char **argv)
+{
+  const std::vector<ArgSpec> pageable_args = {
+    {"--n", "uint64", "268435456", "Array length (elements)"},
+  };
+  const std::vector<ArgSpec> pinned_args = {
+    {"--n", "uint64", "268435456", "Array length (elements)"},
+  };
+  const std::vector<ArgSpec> chunked_args = {
+    {"--n", "uint64", "536870912", "Array length (elements)"},
+    {"--free-mem-threshold", "float", "0.2",
+     "Fraction of free GPU memory to use per chunk (0, 1]"},
+  };
+  const std::vector<ArgSpec> streamed_args = {
+    {"--n", "uint64", "536870912", "Array length (elements)"},
+    {"--free-mem-threshold", "float", "0.2",
+     "Fraction of free GPU memory to use per chunk (0, 1]"},
+    {"--streams", "int", "4",
+     "Number of concurrent CUDA streams"},
+  };
+
+  const VariantRegistry variants = {
+    {
+      "pageable",
+      "Pageable host memory, no chunking",
+      pageable_args,
+      [](const RunConfig &c) {
+        unsigned long long n = get_ull(c, "--n", 1024ULL * 1024 * 256);
+        printMemoryRequirements(n);
+        pageableMemoryAddition(n);
+      },
+    },
+    {
+      "pinned",
+      "Pinned host memory, no chunking",
+      pinned_args,
+      [](const RunConfig &c) {
+        unsigned long long n = get_ull(c, "--n", 1024ULL * 1024 * 256);
+        printMemoryRequirements(n);
+        pinnedMemoryAddition(n);
+      },
+    },
+    {
+      "pageable-large",
+      "Pageable memory with chunked GPU transfers",
+      chunked_args,
+      [](const RunConfig &c) {
+        unsigned long long n = get_ull(c, "--n", 1ULL * 1024 * 1024 * 512);
+        printMemoryRequirements(n);
+        pageableMemoryAdditionLarge(n, get_float(c, "--free-mem-threshold", 0.2f));
+      },
+    },
+    {
+      "streamed-large",
+      "Pinned memory with multi-stream async transfers",
+      streamed_args,
+      [](const RunConfig &c) {
+        unsigned long long n = get_ull(c, "--n", 1ULL * 1024 * 1024 * 512);
+        printMemoryRequirements(n);
+        streamedVectorAdditionLarge(n,
+                                    get_float(c, "--free-mem-threshold", 0.2f),
+                                    get_int(c, "--streams", 4));
+      },
+    },
+  };
 
   try
   {
-    enum Options
-    {
-      PageableMemoryVectorAddition,
-      PinnedMemoryVectorAddition,
-      PageableMemoryVectorAdditionLarge,
-      StreamedVectorAdditionLarge
-    };
+    RunConfig cfg = parse_args(argc, argv, variants);
 
-    Options option = StreamedVectorAdditionLarge;
-    unsigned long long array_len, chunk_len;
+    if (cfg.print_help)    { print_usage(argv[0], variants); return EXIT_SUCCESS; }
+    if (cfg.list_variants) { print_variants(variants);        return EXIT_SUCCESS; }
 
-    switch (option)
-    {
-    case PageableMemoryVectorAddition:
-      array_len = 1024 * 1024 * 256;
-      printMemoryRequirements(array_len);
-      pageableMemoryAddition(array_len);
-      break;
+    CUDA_CALL(cudaSetDevice(cfg.device));
+    printDeviceDetails();
+    run_variant(cfg, variants);
 
-    case PinnedMemoryVectorAddition:
-      array_len = 1024 * 1024 * 256;
-      chunk_len = MAX_BLOCK_DIM;
-      printMemoryRequirements(array_len);
-      pinnedMemoryAddition(array_len);
-      break;
-
-    case PageableMemoryVectorAdditionLarge: // chunked execution for very large
-                                            // array
-      array_len = 1ULL * 1024 * 1024 * 512;
-      // printMemoryRequirements(array_len);
-      pageableMemoryAdditionLarge(array_len);
-      break;
-
-    case StreamedVectorAdditionLarge: // streamed chunk execution for very large
-                                      // array
-      array_len = 1ULL * 1024 * 1024 * 512;
-      streamedVectorAdditionLarge(array_len);
-      break;
-
-    default:
-      break;
-    }
-
-    // pageableMemoryAddition(arraySize, chunkSize);
-    // pinnedMemoryAddition(arraySize, chunkSize);
-    // streamedAddition(arraySize);
-
-    // cudaDeviceReset - for profiling
-    CUDA_CALL(cudaDeviceReset());
+    if (cfg.reset_device) { CUDA_CALL(cudaDeviceReset()); }
   }
-  catch (std::exception &e)
+  catch (const std::exception &e)
   {
-    fprintf(stderr, "Exception: %s\n", e.what());
+    fprintf(stderr, "Error: %s\n", e.what());
+    print_usage(argv[0], variants);
     return EXIT_FAILURE;
   }
 
