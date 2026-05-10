@@ -33,7 +33,7 @@ custom_target(
 python3 = find_program(join_paths(meson.project_source_root(), '.venv', 'bin', 'python'), required: true)
 vec_add_bin_path = join_paths(meson.current_build_dir(), 'vec_add')
 profile_matrix_runner = files('../tools/profile_matrix_runner.py')
-vec_add_matrix_file = join_paths(meson.project_source_root(), '1_vector_addition', 'vec_add_experiments.yaml')
+vec_add_matrix_file = join_paths(meson.project_source_root(), '1_vector_addition', 'experiments.yaml')
 
 profile_mode = 'dev'
 if get_option('enable_profiling_build')

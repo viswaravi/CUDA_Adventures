@@ -86,8 +86,18 @@ python tools/profile_runner.py \
   --binary <path-to-binary> \
   --output-dir <output-directory> \
   --report-stem <report-name> \
+  [--ncu-replay-mode <mode>] \
+  [--ncu-profiler-set <set>] \
+  [--ncu-section <section>]... \
+  [--nsys-trace <domains>] \
+  [--nsys-sample <mode>] \
+  [--nsys-capture-range <range>] \
+  [--profiler-arg=<raw-profiler-flag>]... \
   -- <binary-args...>
 ```
+
+Use the tool-specific switches for common options such as NCU `--replay-mode` / `--set`
+or NSYS `--trace` / `--sample`. For anything else, repeat `--profiler-arg=<flag>`.
 
 **Example — NCU, `pageable/small`**
 ```bash
@@ -97,6 +107,8 @@ python tools/profile_runner.py \
   --binary ./build/1_vector_addition/vec_add \
   --output-dir profiling/vec_add/ncu/pageable/small \
   --report-stem pageable_small \
+  --ncu-replay-mode kernel \
+  --ncu-profiler-set full \
   -- --variant pageable --n 67108864
 ```
 
@@ -127,22 +139,50 @@ python tools/profile_matrix_runner.py \
   [--profiler-bin <path>]   # defaults: ncu=/usr/bin/ncu, nsys=/usr/bin/nsys \
   [--output-dir <dir>]      # default: profiling \
   [--build-tag <tag>]       # default: dev \
+  [--ncu-replay-mode <mode>] \
+  [--ncu-profiler-set <set>] \
+  [--ncu-section <section>]... \
+  [--nsys-trace <domains>] \
+  [--nsys-sample <mode>] \
+  [--nsys-capture-range <range>] \
+  [--profiler-arg=<raw-profiler-flag>]... \
   [--label <label>]         # run only this entry (single-shot mode) \
   [--variant <variant>]     # disambiguate when multiple entries share the same label
 ```
 
+The YAML file can also define profiler defaults:
+
+```yaml
+experiment: vector_addition
+profilers:
+  ncu:
+    replay-mode: kernel
+    profiler-set: full
+    sections: []
+    args: []
+  nsys:
+    trace: cuda,nvtx,osrt
+    sample: none
+    args: []
+```
+
+Each sweep entry may optionally add its own `profilers:` block. Matrix defaults are applied first,
+then per-entry overrides, then explicit CLI flags.
+
 **Example — NCU sweep over all vec_add experiments**
 ```bash
 python tools/profile_matrix_runner.py \
-  --matrix 1_vector_addition/vec_add_experiments.yaml \
+  --matrix 1_vector_addition/experiments.yaml \
   --tool ncu \
-  --binary ./build/1_vector_addition/vec_add
+  --binary ./build/1_vector_addition/vec_add \
+  --ncu-replay-mode kernel \
+  --ncu-profiler-set full
 ```
 
 **Example — NSYS sweep with a custom build tag**
 ```bash
 python tools/profile_matrix_runner.py \
-  --matrix 1_vector_addition/vec_add_experiments.yaml \
+  --matrix 1_vector_addition/experiments.yaml \
   --tool nsys \
   --binary ./build/1_vector_addition/vec_add \
   --build-tag v1
@@ -156,7 +196,7 @@ If two entries have the same label (e.g. both `pageable` and `pinned` have `labe
 ```bash
 # pageable/small only
 python tools/profile_matrix_runner.py \
-  --matrix 1_vector_addition/vec_add_experiments.yaml \
+  --matrix 1_vector_addition/experiments.yaml \
   --tool ncu \
   --binary ./build/1_vector_addition/vec_add \
   --variant pageable \
@@ -166,7 +206,7 @@ python tools/profile_matrix_runner.py \
 ```bash
 # streamed-large/s4-256m only
 python tools/profile_matrix_runner.py \
-  --matrix 1_vector_addition/vec_add_experiments.yaml \
+  --matrix 1_vector_addition/experiments.yaml \
   --tool ncu \
   --binary ./build/1_vector_addition/vec_add \
   --label s4-256m

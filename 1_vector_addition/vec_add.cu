@@ -458,7 +458,7 @@ int main(int argc, char **argv)
       },
     },
     {
-      "streamed-large",
+      "pinned-large",
       "Pinned memory with multi-stream async transfers",
       streamed_args,
       [](const RunConfig &c) {
