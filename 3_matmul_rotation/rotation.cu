@@ -8,7 +8,9 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <vector>
 #include "stb_image_write.h"
+#include "cli_args.hpp"
 #define PI 3.14159265358979323846
 #define BLOCK_WIDTH 32
 #define MAX_SHARED_WIDTH 50
@@ -419,184 +421,261 @@ __global__ void rotation_bbox_strided(float *d_in, float *d_out, int width,
   }
 }
 
-int main()
+std::string get_string(const RunConfig &cfg, const std::string &flag,
+                       const std::string &default_val)
 {
-  // Choose GPU
-  CUDA_CALL(cudaSetDevice(0));
+  auto it = cfg.extra.find(flag);
+  if (it == cfg.extra.end())
+    return default_val;
+  return it->second;
+}
+
+enum RotationOption
+{
+  IMG_ROT_NAIVE,
+  TEX_TEST,
+  IMG_ROT_BBOX_COOP,
+  IMG_ROT_BBOX_STRIDED
+};
+
+void run_rotation(RotationOption option, const RunConfig &cfg)
+{
+  // Parse variant-specific runtime arguments
+  const std::string image_path = get_string(cfg, "--image", "res/cuda.png");
+  const int rotation_angle_degrees = get_int(cfg, "--angle", 45);
+
+  if (rotation_angle_degrees < -360 || rotation_angle_degrees > 360)
+  {
+    throw std::invalid_argument("--angle must be in range [-360, 360]");
+  }
+
+  int width, height, channels;
+  unsigned char *h_in_char, *h_out_char;
+
+  // Load input image
+  h_in_char = stbi_load(image_path.c_str(), &width, &height, &channels, 0);
+  if (!h_in_char)
+  {
+    throw std::runtime_error(std::string("Error loading image: ") + image_path);
+  }
+
+  // Compute image memory footprint
+  size_t img_pixel_count = width * height * channels;
+  size_t img_size = img_pixel_count * sizeof(float);
+
+  std::cout << "Image Width: " << width << "  Height:" << height
+            << "  Channels:" << channels << std::endl;
+
+  // Host buffers
+  unsigned char *h_out_gray = new unsigned char[width * height];
+  float *h_out_gray_f = new float[width * height];
+
+  h_out_char = new unsigned char[img_pixel_count];
+  float *h_out_cpu, *h_in, *h_out;
+
+  h_out_cpu = (float *)malloc(img_size);
+  h_in = (float *)malloc(img_size);
+  h_out = (float *)malloc(img_size);
+
+  // Convert input image to float domain for interpolation math
+  std::transform(h_in_char, h_in_char + img_pixel_count, h_in,
+                 [](unsigned char pixel)
+                 { return pixel / 255.0f; });
+
+  // Allocate GPU buffers
+  CudaMemory<float> d_in(img_size);
+  CudaMemory<float> d_out(img_size);
+
+  // Allocate/copy CUDA array for texture path
+  cudaArray *cuArray;
+  cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float4>();
+  cudaMallocArray(&cuArray, &channelDesc, width, height);
+  cudaMemcpyToArray(cuArray, 0, 0, h_in, img_size, cudaMemcpyHostToDevice);
+
+  // Texture resource descriptor
+  struct cudaResourceDesc resDesc;
+  memset(&resDesc, 0, sizeof(resDesc));
+  resDesc.resType = cudaResourceType::cudaResourceTypeArray;
+  resDesc.res.array.array = cuArray;
+
+  // Texture sampling descriptor
+  cudaTextureDesc texDesc = {};
+  texDesc.addressMode[0] = cudaAddressModeClamp;
+  texDesc.addressMode[1] = cudaAddressModeClamp;
+  texDesc.filterMode = cudaFilterModeLinear;
+  texDesc.readMode = cudaReadModeElementType;
+  texDesc.normalizedCoords = 1;
+
+  cudaTextureObject_t texObj = 0;
+  cudaCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
+
+  // Copy input image to linear device buffer
+  CUDA_CALL(cudaMemcpy(d_in.get(), h_in, img_size, cudaMemcpyHostToDevice));
+
+  // CPU reference output for quick visual/debug comparison
+  rotation_cpu(h_in, h_out_cpu, width, height, channels,
+               rotation_angle_degrees);
+  std::transform(h_out_cpu, h_out_cpu + img_pixel_count, h_out_char,
+                 float_to_uchar);
+  stbi_write_jpg("rot_cpu.jpg", width, height, channels, h_out_char, 100);
+
+  dim3 blockSize(BLOCK_WIDTH, BLOCK_WIDTH);
+  if (option == IMG_ROT_BBOX_COOP || option == IMG_ROT_BBOX_STRIDED)
+  {
+    // Shared-memory bbox variants need a smaller block for resource limits
+    blockSize = dim3(16, 16);
+  }
+  dim3 gridSize((width + blockSize.x - 1) / blockSize.x,
+                (height + blockSize.y - 1) / blockSize.y);
+
+  printKernelConfig(gridSize, blockSize);
+
+  size_t bbox_size = 4 * sizeof(int);
+  size_t tile_size =
+      MAX_SHARED_WIDTH * MAX_SHARED_WIDTH * sizeof(float) * channels;
+  size_t shared_mem_size = bbox_size + tile_size;
+
+  // Launch selected variant
+  switch (option)
+  {
+  case IMG_ROT_NAIVE:
+    rotation_naive<<<gridSize, blockSize>>>(d_in.get(), d_out.get(), width,
+                                            height, channels,
+                                            rotation_angle_degrees);
+    CUDA_CALL(cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
+    std::transform(h_out, h_out + img_pixel_count, h_out_char,
+                   float_to_uchar);
+    stbi_write_jpg("rot_naive.jpg", width, height, channels, h_out_char,
+                   100);
+    break;
+  case TEX_TEST:
+    tex_interpolation<<<gridSize, blockSize>>>(texObj, d_out.get(), width,
+                                               height, channels);
+    CUDA_CALL(cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
+    std::transform(h_out, h_out + img_pixel_count, h_out_char,
+                   float_to_uchar);
+    stbi_write_jpg("tex_test.jpg", width, height, channels, h_out_char,
+                   100);
+    break;
+  case IMG_ROT_BBOX_COOP:
+    rotation_bbox_coop<<<gridSize, blockSize, shared_mem_size>>>(
+        d_in.get(), d_out.get(), width, height, channels,
+        rotation_angle_degrees);
+    CUDA_CALL(cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
+    std::transform(h_out, h_out + img_pixel_count, h_out_char,
+                   float_to_uchar);
+    stbi_write_jpg("rot_bbox_coop.jpg", width, height, channels, h_out_char,
+                   100);
+    break;
+
+  case IMG_ROT_BBOX_STRIDED:
+    rotation_bbox_strided<<<gridSize, blockSize, shared_mem_size>>>(
+        d_in.get(), d_out.get(), width, height, channels,
+        rotation_angle_degrees);
+    CUDA_CALL(cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
+    std::transform(h_out, h_out + img_pixel_count, h_out_char,
+                   float_to_uchar);
+    stbi_write_jpg("rot_bbox_strided.jpg", width, height, channels, h_out_char,
+                   100);
+    break;
+
+  default:
+    break;
+  }
+
+  CUDA_CALL(cudaGetLastError());
+  CUDA_CALL(cudaDeviceSynchronize());
+
+  // Sanity compare against CPU path
+  verifyRotationImages(h_out_cpu, h_out, width, height, channels);
+
+  // Cleanup host/device resources
+  stbi_image_free(h_in_char);
+  free(h_in);
+  free(h_out);
+  free(h_out_cpu);
+
+  delete[] h_out_gray;
+  delete[] h_out_gray_f;
+  delete[] h_out_char;
+
+  cudaDestroyTextureObject(texObj);
+  cudaFreeArray(cuArray);
+}
+
+int main(int argc, char **argv)
+{
+  const std::vector<ArgSpec> rotation_args = {
+      {"--image", "path", "res/cuda.png", "Input image path"},
+      {"--angle", "int", "45", "Rotation angle in degrees"},
+  };
+
+  const std::vector<ArgSpec> texture_args = {
+      {"--image", "path", "res/cuda.png", "Input image path"},
+  };
+
+  const VariantRegistry variants = {
+      {
+          "rotation-naive",
+          "Image rotation with direct bilinear interpolation",
+          rotation_args,
+          [](const RunConfig &c)
+          { run_rotation(IMG_ROT_NAIVE, c); },
+      },
+      {
+          "texture-interpolation",
+          "Texture interpolation sampling test",
+          texture_args,
+          [](const RunConfig &c)
+          { run_rotation(TEX_TEST, c); },
+      },
+      {
+          "rotation-bbox-coop",
+          "Rotation with cooperative shared-memory BBox loading",
+          rotation_args,
+          [](const RunConfig &c)
+          { run_rotation(IMG_ROT_BBOX_COOP, c); },
+      },
+      {
+          "rotation-bbox-strided",
+          "Rotation with strided shared-memory BBox loading",
+          rotation_args,
+          [](const RunConfig &c)
+          { run_rotation(IMG_ROT_BBOX_STRIDED, c); },
+      },
+  };
 
   try
   {
-    enum Options
+    RunConfig cfg = parse_args(argc, argv, variants);
+    if (cfg.print_help)
     {
-      IMG_ROT_NAIVE,
-      TEX_TEST,
-      IMG_ROT_BBOX_COOP,
-      IMG_ROT_BBOX_STRIDED
-    };
-    Options option = IMG_ROT_NAIVE;
-
-    // Load Image
-    int width, height, channels;
-    unsigned char *h_in_char, *h_out_char;
-
-    h_in_char =
-        stbi_load("C:\\Users\\rvisw\\Pictures\\Screenshots\\mountain.jpg",
-                  &width, &height, &channels, 0);
-    if (!h_in_char)
+      print_usage(argv[0], variants);
+      return EXIT_SUCCESS;
+    }
+    if (cfg.list_variants)
     {
-      throw std::runtime_error(std::string("Error loading image"));
+      print_variants(variants);
+      return EXIT_SUCCESS;
     }
 
-    // Allocate GPU Memory
-    size_t img_pixel_count = width * height * channels;
-    size_t img_size = img_pixel_count * sizeof(float);
+    // Set CUDA device and execute requested variant
+    CUDA_CALL(cudaSetDevice(cfg.device));
+    printDeviceDetails();
+    run_variant(cfg, variants);
 
-    std::cout << "Image Width: " << width << "  Height:" << height
-              << "  Channels:" << channels << std::endl;
-
-    // Host Data
-    // Gray
-    unsigned char *h_out_gray = new unsigned char[width * height];
-    float *h_out_gray_f = new float[width * height];
-
-    // RG
-    h_out_char = new unsigned char[img_pixel_count];
-    float *h_out_cpu, *h_in, *h_out;
-
-    h_out_cpu = (float *)malloc(img_size);
-    h_in = (float *)malloc(img_size);
-    h_out = (float *)malloc(img_size);
-
-    // Convert Char to Float for precise convolution
-    std::transform(h_in_char, h_in_char + img_pixel_count, h_in,
-                   [](unsigned char pixel)
-                   { return pixel / 255.0f; });
-
-    // GPU
-    CudaMemory<float> d_in(img_size);
-    CudaMemory<float> d_out(img_size);
-
-    // Allocate CUDA array for texture binding
-    cudaArray *cuArray;
-    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float4>();
-    cudaMallocArray(&cuArray, &channelDesc, width, height);
-    // Copy data to CUDA array
-    cudaMemcpyToArray(cuArray, 0, 0, h_in, img_size, cudaMemcpyHostToDevice);
-
-    // Create texture resource descriptor
-    struct cudaResourceDesc resDesc;
-    memset(&resDesc, 0, sizeof(resDesc));
-    resDesc.resType = cudaResourceType::cudaResourceTypeArray;
-    resDesc.res.array.array = cuArray;
-
-    // Create texture descriptor
-    cudaTextureDesc texDesc = {};
-    texDesc.addressMode[0] =
-        cudaAddressModeClamp; // Handle out-of-bounds with clamp to edge
-    texDesc.addressMode[1] = cudaAddressModeClamp;
-    texDesc.filterMode = cudaFilterModeLinear; // Bilinear interpolation
-    texDesc.readMode =
-        cudaReadModeElementType; // Read values as-is, without normalization
-    texDesc.normalizedCoords = 1;
-
-    // Create texture object
-    cudaTextureObject_t texObj = 0;
-    cudaCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
-
-    // Load in GPU
-    CUDA_CALL(cudaMemcpy(d_in.get(), h_in, img_size, cudaMemcpyHostToDevice));
-
-    // Perform GT Conv CPU version
-    int rotation_angle_degrees = 45;
-    rotation_cpu(h_in, h_out_cpu, width, height, channels,
-                 rotation_angle_degrees);
-    std::transform(h_out_cpu, h_out_cpu + img_pixel_count, h_out_char,
-                   float_to_uchar);
-    stbi_write_jpg("rot_cpu.jpg", width, height, channels, h_out_char, 100);
-
-    // Perform GPU Variant
-    dim3 blockSize(BLOCK_WIDTH, BLOCK_WIDTH);
-    dim3 gridSize((width + blockSize.x - 1) / blockSize.x,
-                  (height + blockSize.y - 1) / blockSize.y);
-
-    printKernelConfig(gridSize, blockSize);
-
-    size_t bbox_size = 4 * sizeof(int);
-    size_t tile_size =
-        MAX_SHARED_WIDTH * MAX_SHARED_WIDTH * sizeof(float) * channels;
-    size_t shared_mem_size = bbox_size + tile_size;
-
-    switch (option)
+    // Reset device after execution (unless explicitly disabled)
+    if (cfg.reset_device)
     {
-    // Rotation
-    case IMG_ROT_NAIVE:
-      rotation_naive<<<gridSize, blockSize>>>(d_in.get(), d_out.get(), width,
-                                              height, channels,
-                                              rotation_angle_degrees);
-      CUDA_CALL(
-          cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
-      std::transform(h_out, h_out + img_pixel_count, h_out_char,
-                     float_to_uchar);
-      stbi_write_jpg("rot_naive.jpg", width, height, channels, h_out_char,
-                     100);
-      break;
-    case TEX_TEST:
-      tex_interpolation<<<gridSize, blockSize>>>(texObj, d_out.get(), width,
-                                                 height, channels);
-      CUDA_CALL(
-          cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
-      std::transform(h_out, h_out + img_pixel_count, h_out_char,
-                     float_to_uchar);
-      stbi_write_jpg("tex_test.jpg", width, height, channels, h_out_char,
-                     100);
-      break;
-    case IMG_ROT_BBOX_COOP:
-      rotation_bbox_coop<<<gridSize, blockSize, shared_mem_size>>>(
-          d_in.get(), d_out.get(), width, height, channels,
-          rotation_angle_degrees);
-      CUDA_CALL(
-          cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
-      std::transform(h_out, h_out + img_pixel_count, h_out_char,
-                     float_to_uchar);
-      stbi_write_jpg("rot_bbox.jpg", width, height, channels, h_out_char,
-                     100);
-      break;
-
-    case IMG_ROT_BBOX_STRIDED:
-      rotation_bbox_strided<<<gridSize, blockSize, shared_mem_size>>>(
-          d_in.get(), d_out.get(), width, height, channels,
-          rotation_angle_degrees);
-      CUDA_CALL(
-          cudaMemcpy(h_out, d_out.get(), img_size, cudaMemcpyDeviceToHost));
-      std::transform(h_out, h_out + img_pixel_count, h_out_char,
-                     float_to_uchar);
-      stbi_write_jpg("rot_bbox.jpg", width, height, channels, h_out_char,
-                     100);
-      break;
-
-    default:
-      break;
+      CUDA_CALL(cudaDeviceReset());
     }
-
-    verifyRotationImages(h_out_cpu, h_out, width, height, channels);
-
-    // Free Memory
-    stbi_image_free(h_in_char);
-    free(h_in);
-    free(h_out);
-    free(h_out_cpu);
-
-    cudaDestroyTextureObject(texObj);
-    cudaFreeArray(cuArray);
-
-    // cudaDeviceReset - for profiling
-    CUDA_CALL(cudaDeviceReset());
   }
-  catch (std::exception &e)
+  catch (const std::exception &e)
   {
-    fprintf(stderr, "Exception: %s\n", e.what());
+    fprintf(stderr, "Error: %s\n", e.what());
+    print_usage(argv[0], variants);
     return EXIT_FAILURE;
   }
 
-  return 0;
+  return EXIT_SUCCESS;
 }

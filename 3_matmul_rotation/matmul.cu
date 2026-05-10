@@ -7,8 +7,10 @@
 #include <iostream>
 #include <random>
 #include <string>
+#include <vector>
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include "cli_args.hpp"
 #include "utils.cuh"
 
 #define BLOCK_WIDTH 32
@@ -225,113 +227,302 @@ void printMemoryRequirements(unsigned long M, unsigned long N,
             << array_size_mbytes << "MB" << std::endl;
 }
 
-int main()
+int main(int argc, char **argv)
 {
-  // Choose GPU
-  CUDA_CALL(cudaSetDevice(0));
+  const std::vector<ArgSpec> matmul_args = {
+      {"--m", "int", "2048", "Rows for matrix A and C"},
+      {"--n", "int", "2048", "Cols for matrix B and C"},
+      {"--k", "int", "2048", "Cols for matrix A / rows for matrix B"},
+  };
+
+  const VariantRegistry variants = {
+      {
+          "matmul-naive",
+          "Naive global-memory matrix multiplication",
+          matmul_args,
+          [](const RunConfig &c)
+          {
+            // Parse matrix dimensions from CLI args
+            const int M = get_int(c, "--m", 2048);
+            const int N = get_int(c, "--n", 2048);
+            const int K = get_int(c, "--k", 2048);
+
+            if (M <= 0 || N <= 0 || K <= 0)
+            {
+              throw std::invalid_argument("--m, --n and --k must all be > 0");
+            }
+
+            int elts_A = M * K;
+            int elts_B = K * N;
+            int elts_C = M * N;
+            int mem_size_A = elts_A * sizeof(float);
+            int mem_size_B = elts_B * sizeof(float);
+            int mem_size_C = elts_C * sizeof(float);
+
+            // Debug memory summary for this run
+            printMemoryRequirements(M, N, K);
+
+            // Allocate host memory
+            float *h_A, *h_B, *h_C, *h_C_cpu;
+            h_A = (float *)malloc(mem_size_A);
+            h_B = (float *)malloc(mem_size_B);
+            h_C = (float *)malloc(mem_size_C);
+            h_C_cpu = (float *)malloc(mem_size_C);
+
+            // Initialize host buffers
+            std::fill(h_A, h_A + elts_A, 2.0f);
+            std::fill(h_B, h_B + elts_B, 2.0f);
+            std::fill(h_C, h_C + elts_C, 0.0f);
+            std::fill(h_C_cpu, h_C_cpu + elts_C, 0.0f);
+
+            // Allocate/copy device buffers
+            CudaMemory<float> d_A(mem_size_A), d_B(mem_size_B), d_C(mem_size_C);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size_A, cudaMemcpyHostToDevice));
+            CUDA_CALL(cudaMemcpy(d_B.get(), h_B, mem_size_B, cudaMemcpyHostToDevice));
+
+            // Kernel launch configuration
+            dim3 dimBlock(BLOCK_WIDTH, BLOCK_WIDTH);
+            dim3 dimGrid((N + dimBlock.x - 1) / dimBlock.x,
+                         (M + dimBlock.y - 1) / dimBlock.y);
+
+            // Launch variant kernel
+            matmulKernelNaive<<<dimGrid, dimBlock>>>(d_A.get(), d_B.get(), d_C.get(), M, N, K);
+            CUDA_CALL(cudaGetLastError());
+            CUDA_CALL(cudaDeviceSynchronize());
+
+            // Copy results back to host
+            CUDA_CALL(cudaMemcpy(h_C, d_C.get(), mem_size_C, cudaMemcpyDeviceToHost));
+
+            // Cleanup host allocations
+            free(h_A);
+            free(h_B);
+            free(h_C);
+            free(h_C_cpu);
+          },
+      },
+      {
+          "matmul-shared",
+          "Shared-memory tiled matrix multiplication",
+          matmul_args,
+          [](const RunConfig &c)
+          {
+            // Parse matrix dimensions from CLI args
+            const int M = get_int(c, "--m", 2048);
+            const int N = get_int(c, "--n", 2048);
+            const int K = get_int(c, "--k", 2048);
+
+            if (M <= 0 || N <= 0 || K <= 0)
+            {
+              throw std::invalid_argument("--m, --n and --k must all be > 0");
+            }
+
+            int elts_A = M * K;
+            int elts_B = K * N;
+            int elts_C = M * N;
+            int mem_size_A = elts_A * sizeof(float);
+            int mem_size_B = elts_B * sizeof(float);
+            int mem_size_C = elts_C * sizeof(float);
+
+            // Debug memory summary for this run
+            printMemoryRequirements(M, N, K);
+
+            // Allocate host memory
+            float *h_A, *h_B, *h_C, *h_C_cpu;
+            h_A = (float *)malloc(mem_size_A);
+            h_B = (float *)malloc(mem_size_B);
+            h_C = (float *)malloc(mem_size_C);
+            h_C_cpu = (float *)malloc(mem_size_C);
+
+            // Initialize host buffers
+            std::fill(h_A, h_A + elts_A, 2.0f);
+            std::fill(h_B, h_B + elts_B, 2.0f);
+            std::fill(h_C, h_C + elts_C, 0.0f);
+            std::fill(h_C_cpu, h_C_cpu + elts_C, 0.0f);
+
+            // Allocate/copy device buffers
+            CudaMemory<float> d_A(mem_size_A), d_B(mem_size_B), d_C(mem_size_C);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size_A, cudaMemcpyHostToDevice));
+            CUDA_CALL(cudaMemcpy(d_B.get(), h_B, mem_size_B, cudaMemcpyHostToDevice));
+
+            // Kernel launch configuration
+            dim3 dimBlock(BLOCK_WIDTH, BLOCK_WIDTH);
+            dim3 dimGrid((N + dimBlock.x - 1) / dimBlock.x,
+                         (M + dimBlock.y - 1) / dimBlock.y);
+
+            // Launch variant kernel
+            matmulKernelShared<<<dimGrid, dimBlock>>>(d_A.get(), d_B.get(), d_C.get(), M, N, K);
+            CUDA_CALL(cudaGetLastError());
+            CUDA_CALL(cudaDeviceSynchronize());
+
+            // Copy results back to host
+            CUDA_CALL(cudaMemcpy(h_C, d_C.get(), mem_size_C, cudaMemcpyDeviceToHost));
+
+            // Cleanup host allocations
+            free(h_A);
+            free(h_B);
+            free(h_C);
+            free(h_C_cpu);
+          },
+      },
+      {
+          "transpose-naive",
+          "Shared-memory transpose without padding",
+          matmul_args,
+          [](const RunConfig &c)
+          {
+            // Parse matrix dimensions from CLI args
+            const int M = get_int(c, "--m", 2048);
+            const int N = get_int(c, "--n", 2048);
+            const int K = get_int(c, "--k", 2048);
+
+            if (M <= 0 || N <= 0 || K <= 0)
+            {
+              throw std::invalid_argument("--m, --n and --k must all be > 0");
+            }
+
+            int elts_A = M * K;
+            int elts_B = K * N;
+            int elts_C = M * N;
+            int mem_size_A = elts_A * sizeof(float);
+            int mem_size_B = elts_B * sizeof(float);
+            int mem_size_C = elts_C * sizeof(float);
+
+            // Debug memory summary for this run
+            printMemoryRequirements(M, N, K);
+
+            // Allocate host memory
+            float *h_A, *h_B, *h_C, *h_C_cpu;
+            h_A = (float *)malloc(mem_size_A);
+            h_B = (float *)malloc(mem_size_B);
+            h_C = (float *)malloc(mem_size_C);
+            h_C_cpu = (float *)malloc(mem_size_C);
+
+            // Initialize host buffers
+            std::fill(h_A, h_A + elts_A, 2.0f);
+            std::fill(h_B, h_B + elts_B, 2.0f);
+            std::fill(h_C, h_C + elts_C, 0.0f);
+            std::fill(h_C_cpu, h_C_cpu + elts_C, 0.0f);
+
+            // Allocate/copy device buffers
+            CudaMemory<float> d_A(mem_size_A), d_B(mem_size_B), d_C(mem_size_C);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size_A, cudaMemcpyHostToDevice));
+            CUDA_CALL(cudaMemcpy(d_B.get(), h_B, mem_size_B, cudaMemcpyHostToDevice));
+
+            // Kernel launch configuration
+            dim3 dimBlock(BLOCK_WIDTH, BLOCK_WIDTH);
+            dim3 dimGrid((N + dimBlock.x - 1) / dimBlock.x,
+                         (M + dimBlock.y - 1) / dimBlock.y);
+
+            // Launch variant kernel
+            matTransposeNaive<<<dimGrid, dimBlock>>>(d_A.get(), d_C.get(), M, K);
+            CUDA_CALL(cudaGetLastError());
+            CUDA_CALL(cudaDeviceSynchronize());
+
+            // Copy results back to host
+            CUDA_CALL(cudaMemcpy(h_C, d_C.get(), mem_size_C, cudaMemcpyDeviceToHost));
+
+            // Cleanup host allocations
+            free(h_A);
+            free(h_B);
+            free(h_C);
+            free(h_C_cpu);
+          },
+      },
+      {
+          "transpose-padded",
+          "Shared-memory transpose with bank-conflict padding",
+          matmul_args,
+          [](const RunConfig &c)
+          {
+            // Parse matrix dimensions from CLI args
+            const int M = get_int(c, "--m", 2048);
+            const int N = get_int(c, "--n", 2048);
+            const int K = get_int(c, "--k", 2048);
+
+            if (M <= 0 || N <= 0 || K <= 0)
+            {
+              throw std::invalid_argument("--m, --n and --k must all be > 0");
+            }
+
+            int elts_A = M * K;
+            int elts_B = K * N;
+            int elts_C = M * N;
+            int mem_size_A = elts_A * sizeof(float);
+            int mem_size_B = elts_B * sizeof(float);
+            int mem_size_C = elts_C * sizeof(float);
+
+            // Debug memory summary for this run
+            printMemoryRequirements(M, N, K);
+
+            // Allocate host memory
+            float *h_A, *h_B, *h_C, *h_C_cpu;
+            h_A = (float *)malloc(mem_size_A);
+            h_B = (float *)malloc(mem_size_B);
+            h_C = (float *)malloc(mem_size_C);
+            h_C_cpu = (float *)malloc(mem_size_C);
+
+            // Initialize host buffers
+            std::fill(h_A, h_A + elts_A, 2.0f);
+            std::fill(h_B, h_B + elts_B, 2.0f);
+            std::fill(h_C, h_C + elts_C, 0.0f);
+            std::fill(h_C_cpu, h_C_cpu + elts_C, 0.0f);
+
+            // Allocate/copy device buffers
+            CudaMemory<float> d_A(mem_size_A), d_B(mem_size_B), d_C(mem_size_C);
+            CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size_A, cudaMemcpyHostToDevice));
+            CUDA_CALL(cudaMemcpy(d_B.get(), h_B, mem_size_B, cudaMemcpyHostToDevice));
+
+            // Kernel launch configuration
+            dim3 dimBlock(BLOCK_WIDTH, BLOCK_WIDTH);
+            dim3 dimGrid((N + dimBlock.x - 1) / dimBlock.x,
+                         (M + dimBlock.y - 1) / dimBlock.y);
+
+            // Launch variant kernel
+            matTransposePadded<<<dimGrid, dimBlock>>>(d_A.get(), d_C.get(), M, K);
+            CUDA_CALL(cudaGetLastError());
+            CUDA_CALL(cudaDeviceSynchronize());
+
+            // Copy results back to host
+            CUDA_CALL(cudaMemcpy(h_C, d_C.get(), mem_size_C, cudaMemcpyDeviceToHost));
+
+            // Cleanup host allocations
+            free(h_A);
+            free(h_B);
+            free(h_C);
+            free(h_C_cpu);
+          },
+      },
+  };
 
   try
   {
-    enum Options
+    RunConfig cfg = parse_args(argc, argv, variants);
+    if (cfg.print_help)
     {
-      MATMUL_NAIVE,
-      MATMUL_SHARED,
-      TRANSPOSE_NAIVE,
-      TRANSPOSE_PADDED
-    };
-    Options option = TRANSPOSE_PADDED;
-
-    // A->MxK, B->KxN, C->MxN
-    const int M = 2048; // Rows - A
-    const int N = 2048; // Cols - B
-    const int K = 2048; // Cols-A,Rows-B
-    int elts_A = M * K;
-    int elts_B = K * N;
-    int elts_C = M * N;
-    int mem_size_A = elts_A * sizeof(float);
-    int mem_size_B = elts_B * sizeof(float);
-    int mem_size_C = elts_C * sizeof(float);
-
-    printMemoryRequirements(M, N, K);
-
-    // Allocate host memory
-    float *h_A, *h_B, *h_C, *h_C_cpu;
-    h_A = (float *)malloc(mem_size_A);
-    h_B = (float *)malloc(mem_size_B);
-    h_C = (float *)malloc(mem_size_C);
-    h_C_cpu = (float *)malloc(mem_size_C);
-
-    // Initialize Host Data
-    std::fill(h_A, h_A + elts_A, 2);
-    std::fill(h_B, h_B + elts_B, 2);
-    std::fill(h_C, h_C + elts_C, 0);
-    std::fill(h_C_cpu, h_C_cpu + elts_C, 0);
-
-    /*printMatrix(h_A,N);
-        printMatrix(h_B, N);*/
-    // CPU implementation
-    // cpuMatMul(h_A, h_B, h_C_cpu, M, N, K);
-    // cpuMatTranspose(h_A, h_C_cpu, M, K);
-
-    // Device Memory
-    CudaMemory<float> d_A(mem_size_A), d_B(mem_size_B), d_C(mem_size_C);
-
-    // Copy data to device
-    CUDA_CALL(cudaMemcpy(d_A.get(), h_A, mem_size_A, cudaMemcpyHostToDevice));
-    CUDA_CALL(cudaMemcpy(d_B.get(), h_B, mem_size_B, cudaMemcpyHostToDevice));
-
-    // Define grid and block dimensions
-    dim3 dimBlock(BLOCK_WIDTH, BLOCK_WIDTH); // tile size
-    dim3 dimGrid((N + dimBlock.x - 1) / dimBlock.x,
-                 (M + dimBlock.y - 1) / dimBlock.y);
-
-    // printKernelConfig(dimGrid, dimBlock);
-
-    // Launch the matrix multiplication kernel
-    switch (option)
+      print_usage(argv[0], variants);
+      return EXIT_SUCCESS;
+    }
+    if (cfg.list_variants)
     {
-    case MATMUL_NAIVE:
-      matmulKernelNaive<<<dimGrid, dimBlock>>>(d_A.get(), d_B.get(),
-                                               d_C.get(), M, N, K);
-      break;
-
-    case MATMUL_SHARED:
-      matmulKernelShared<<<dimGrid, dimBlock>>>(d_A.get(), d_B.get(),
-                                                d_C.get(), M, N, K);
-      break;
-
-    case TRANSPOSE_NAIVE:
-      matTransposeNaive<<<dimGrid, dimBlock>>>(d_A.get(), d_C.get(), M, K);
-      break;
-
-    case TRANSPOSE_PADDED:
-      matTransposePadded<<<dimGrid, dimBlock>>>(d_A.get(), d_C.get(), M, K);
-      break;
-    default:
-      break;
+      print_variants(variants);
+      return EXIT_SUCCESS;
     }
 
-    CUDA_CALL(cudaGetLastError());
-    CUDA_CALL(cudaDeviceSynchronize());
+    // Set device and run selected variant
+    CUDA_CALL(cudaSetDevice(cfg.device));
+    printDeviceDetails();
+    run_variant(cfg, variants);
 
-    // Copy result back to host
-    CUDA_CALL(cudaMemcpy(h_C, d_C.get(), mem_size_C, cudaMemcpyDeviceToHost));
-
-    // Verify GPU results
-    // verifyResults(h_C_cpu, h_C, N);
-    // printMatrix(h_C, M,N);
-    //
-    // cudaDeviceReset - for profiling
-    CUDA_CALL(cudaDeviceReset());
-
-    free(h_A);
-    free(h_B);
-    free(h_C);
-    free(h_C_cpu);
+    // Reset device after execution (unless explicitly disabled)
+    if (cfg.reset_device)
+    {
+      CUDA_CALL(cudaDeviceReset());
+    }
   }
-  catch (std::exception &e)
+  catch (const std::exception &e)
   {
-    fprintf(stderr, "Exception: %s\n", e.what());
+    fprintf(stderr, "Error: %s\n", e.what());
+    print_usage(argv[0], variants);
     return EXIT_FAILURE;
   }
 
