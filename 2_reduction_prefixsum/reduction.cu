@@ -46,10 +46,11 @@ __global__ void reduce1(float *A, float *blockSums, const unsigned long long len
   {
     __syncthreads();
 
-    // Choose active threads in strides 2,4,8,16,...
-    // Divergent threads
+    // Choose active threads in strides 1,2,4,8,16,...
+    // stall: divergent threads within a warp - some threads are idle while others are active at each cycle
     if (tid % (2 * stride) == 0 && (tid + stride < blockDim.x))
     {
+      // stall: shared memory bank conflict, not a big issue, already serialized by divergent threads
       partialSum[tid] += partialSum[tid + stride];
     }
   }
@@ -62,6 +63,7 @@ __global__ void reduce1(float *A, float *blockSums, const unsigned long long len
 }
 
 // 2. Interleaved Addressing with Bank Conflicts
+// Focus on providing uniform load to threads within a warp to reduce divergence
 __global__ void reduce2(float *A, float *blockSums, const unsigned long long length)
 {
   extern __shared__ float partialSum[];
@@ -73,14 +75,21 @@ __global__ void reduce2(float *A, float *blockSums, const unsigned long long len
   partialSum[tid] = idx < length ? A[idx] : 0.0f;
 
   // Block Reduction in Strides
+  // strides 1,2,4,8,... lead to all threads being active
   for (unsigned int stride = 1; stride < blockDim.x; stride *= 2)
   {
     __syncthreads();
-
-    // All threads are active with strided indexing (no divergent branches)
+    
+    // interleaved addressing pattern but as stride increases only 
+    // lower warps in the block do the work so reduced warp divergence
+    // stall: higher indexed warps are idle
+    // metric: smsp__average_warps_active_per_inst_executed.ratio
     int index = 2 * stride * tid;
     if (index + stride < blockDim.x)
     {
+      // stall: Bank Conflicts - threads access shared memory in a pattern that causes multiple 
+      // threads to access the same memory bank, Increases warp stall
+      // metric: derived__memory_l1_conflicts_shared_way
       partialSum[index] += partialSum[index + stride];
     }
   }
@@ -92,7 +101,8 @@ __global__ void reduce2(float *A, float *blockSums, const unsigned long long len
   }
 }
 
-// 3. Sequential Addressing with Idle Threads
+// 3. Sequential Addressing with Idle Threads (uneven work distribution - Idle threads & warps)
+// Achieved uniform workload within a warp but uneven workload within the block.
 __global__ void reduce3(float *A, float *blockSums, const unsigned long long length)
 {
   extern __shared__ float partialSum[];
@@ -103,12 +113,17 @@ __global__ void reduce3(float *A, float *blockSums, const unsigned long long len
   // Load data into shared memory
   partialSum[tid] = idx < length ? A[idx] : 0.0f;
 
-  // Block Reduction in Strides - Stop at 32 for final warp reduction later
-  // Only half of threads are active
+  // Block Reduction - only half of threads are active in a block even at start and decreases by half 
+  // every stride leads to many idle threads, especially in later strides when only a few threads are active
   for (unsigned int stride = blockDim.x / 2; stride > 0; stride /= 2)
   {
     __syncthreads();
 
+    // stall: even fewer warps than reduce2 are active at each stride, as only threads with tid < stride are active
+    // all those tail warps which cannot execute any instruction also need to participate in synchronization 
+    // leading to increased barrier wait in __syncthreads() until block reaches end
+    // metric: smsp__thread_inst_executed_per_inst_executed.ratio
+    // reduced instruction issue efficiency in warp
     if (tid < stride && (tid + stride < blockDim.x))
     {
       partialSum[tid] += partialSum[tid + stride];
@@ -116,19 +131,21 @@ __global__ void reduce3(float *A, float *blockSums, const unsigned long long len
   }
 
   // Add block reduce value to global memory
-  if (tid == 0)
+  if (tid == 0) 
   {
     blockSums[blockIdx.x] = partialSum[0];
   }
 }
 
 // 4. Sequential Addressing, Add during load
+// Reducing the block size to compensate for uneven work distribution for tail warps which happened due to sequential addressing
 __global__ void reduce4(float *A, float *blockSums, const unsigned long long length)
 {
   // shared memory is halved, as each thread loads two elements
   extern __shared__ float partialSum[];
 
-  // Double Block Dimension
+  // Double Block Dimension - Each thread loads two elements from global memory and adds them during load, 
+  // reducing the number of iterations in the reduction loop by half.
   unsigned long long idx = (blockIdx.x * blockDim.x * 2) + threadIdx.x;
   int tid = threadIdx.x;
 
@@ -153,14 +170,15 @@ __global__ void reduce4(float *A, float *blockSums, const unsigned long long len
   }
 }
 
-// 5. Sequential Addressing, Loop unrolling last loop
+// 5. Sequential Addressing, Add during load, Unrolling last loop
 __global__ void reduce5(float *A, float *blockSums, const unsigned long long length)
 {
   // shared memory is halved, as each thread loads two elements
   extern __shared__ float partialSum[];
 
-  // Double Block Dimension
-  unsigned long long idx = (blockIdx.x * blockDim.x * 2) + threadIdx.x;
+  // Double Block Dimension - Each thread loads two elements from global memory and adds them during load,
+  // reducing the number of iterations in the reduction loop by half. 
+  unsigned long long idx = (blockIdx.x * blockDim.x * 2) + threadIdx.x; 
   int tid = threadIdx.x;
 
   // Each thread loads sum of two elements from global memory
@@ -197,8 +215,8 @@ __global__ void reduce5(float *A, float *blockSums, const unsigned long long len
   }
 }
 
-// 6. Sequential Addressig, Full loop unrolling
-// Templated Warp Reduction function
+
+// Warp Reduction function, unrolled last 6 steps for 1024 block size
 template <unsigned int blockSize>
 __device__ void warpReduce(volatile float *sdata, int tid)
 {
@@ -216,22 +234,18 @@ __device__ void warpReduce(volatile float *sdata, int tid)
     sdata[tid] += sdata[tid + 1];
 }
 
-// Warp Reduce implemenation using warp shuffle instructions
-__device__ void warpReduceShuffle(float *sdata, int tid)
+// Warp Reduce implementation using warp shuffle instructions
+__device__ float warpReduceShuffle(float value)
 {
-  if (tid < 32)
+  for (int offset = warpSize / 2; offset > 0; offset /= 2)
   {
-    int sum = sdata[tid];
-
-    for (int offset = 32; offset > 0; offset /= 2)
-    {
-      sum += __shfl_down_sync(0xFFFFFFFF, sum, offset);
-    }
-
-    sdata[tid] = sum;
+    value += __shfl_down_sync(FULL_MASK, value, offset);
   }
+
+  return value;
 }
 
+// 6. Sequential Addressing, Add during load, Full loop unrolling
 __global__ void reduce6(float *A, float *blockSums, const unsigned long long length)
 {
   // shared memory is halved, as each thread loads two elements
@@ -292,90 +306,58 @@ __global__ void reduce6(float *A, float *blockSums, const unsigned long long len
   }
 }
 
-// 7. Sequential Addressig, load Multiple elements per thread
+// 7. Sequential Addressing, Add during load, load Multiple elements per thread, with Warp Shuffle Reduction
 __global__ void reduce7(float *A, float *blockSums, const unsigned long long length)
 {
-  // shared memory is halved, as each thread loads two elements
+  // Shared memory stores one partial sum per warp.
   extern __shared__ float partialSum[];
   int tid = threadIdx.x;
   unsigned int blockSize = blockDim.x;
-  unsigned int gridSize = blockSize * 2 * gridDim.x;
+  unsigned int lane = tid % warpSize;
+  unsigned int warpId = tid / warpSize;
+  unsigned int numWarps = (blockSize + warpSize - 1) / warpSize;
+  unsigned long long gridSize = static_cast<unsigned long long>(blockSize) * 2ULL * gridDim.x;
   unsigned long long idx = (blockIdx.x * blockSize * 2) + threadIdx.x;
+  float sum = 0.0f;
 
-  unsigned long long originalIdx = idx;
-  if (originalIdx == 0)
-  {
-    printf("gridSize: %d\n", gridSize);
-    printf("length: %d\n", length);
-  }
-
-  // Each thread loads sum of n elements from global memory
+  // Each thread accumulates multiple elements from global memory.
   while (idx < length)
   {
-    if (originalIdx == 0)
+    sum += A[idx];
+
+    if (idx + blockSize < length)
     {
-      printf("idx: %d, A[idx]: %f, A[idx + blockSize]: %f\n", idx, A[idx], A[idx + blockSize]);
+      sum += A[idx + blockSize];
     }
 
-    partialSum[tid] = A[idx] + A[idx + blockSize];
     idx += gridSize;
   }
 
-  __syncthreads();
+  // Reduce inside each warp using shuffle instructions.
+  sum = warpReduceShuffle(sum);
 
-  if (originalIdx == 0)
+  if (lane == 0)
   {
-    printf("sum: %f\n", partialSum[0]);
-  }
-
-  assert((partialSum[tid] - 2.0f) == 0.0f);
-
-  // Fully Unrolled Reduce
-  if (blockSize >= 512)
-  {
-    // For stride = 256
-    if (tid < 256)
-    {
-      partialSum[tid] += partialSum[tid + 256];
-    }
-    __syncthreads();
-  }
-  if (blockSize >= 256)
-  {
-    // For stride = 128
-    if (tid < 128)
-    {
-      partialSum[tid] += partialSum[tid + 128];
-    }
-    __syncthreads();
-  }
-  if (blockSize >= 128)
-  {
-    // For stride = 64
-    if (tid < 64)
-    {
-      partialSum[tid] += partialSum[tid + 64];
-    }
-    __syncthreads();
-  }
-
-  // For stride = 32
-  if (tid < 32)
-  {
-    warpReduce<BLOCK_WIDTH / 2>(partialSum, tid);
+    partialSum[warpId] = sum;
   }
 
   __syncthreads();
 
-  // Add block reduce value to global memory
-  if (tid == 0)
+  // First warp reduces the warp-level partial sums.
+  if (warpId == 0)
   {
-    blockSums[blockIdx.x] = partialSum[0];
+    sum = (lane < numWarps) ? partialSum[lane] : 0.0f;
+    sum = warpReduceShuffle(sum);
+
+    if (lane == 0)
+    {
+      blockSums[blockIdx.x] = sum;
+    }
   }
 }
 
 // Test kernel to play with warp functions
-__global__ void warpPrimitives(float *A, float *result,
+__global__ void  warpPrimitives(float *A, float *result,
                                const unsigned long long length)
 {
   unsigned long long idx = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -475,7 +457,7 @@ void recursiveReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<floa
 
   // First Reduce
   printKernelConfig(gridDim, blockDim);
-  std::cout << "Array Len: " << array_len << std::endl;
+  std::cout << "Array Length: " << array_len << std::endl;
   kernel<<<gridDim, blockDim, blockDim.x * sizeof(float)>>>(d_A.get(), d_blockSums.get(), array_len);
   cudaDeviceSynchronize();
   // Recursive Reduce
@@ -493,7 +475,7 @@ void recursiveReduceLauncher(ReductionKernel kernel, float *h_A, CudaMemory<floa
     CudaMemory<float> d_blockSums_out(gridDim.x * sizeof(float));
 
     printKernelConfig(gridDim, blockDim);
-    std::cout << "Array Len: " << numBlocks << std::endl;
+    std::cout << "Array Length: " << numBlocks << std::endl;
     kernel<<<gridDim, blockDim, blockDim.x * sizeof(float)>>>(d_blockSums.get(), d_blockSums_out.get(), numBlocks);
     cudaDeviceSynchronize();
 
@@ -574,7 +556,7 @@ int main(int argc, char **argv)
       },
       {
           "interleaved-bank-conflicts",
-          "Interleaved addressing without divergent branches",
+          "Interleaved addressing without divergent branches with shared memory bank conflicts",
           reduction_args,
           [](const RunConfig &c)
           {
@@ -590,7 +572,7 @@ int main(int argc, char **argv)
       },
       {
           "sequential-idle",
-          "Sequential addressing with idle threads",
+          "Sequential addressing with idle threads reduced shared memory bank conflicts",
           reduction_args,
           [](const RunConfig &c)
           {
@@ -653,11 +635,12 @@ int main(int argc, char **argv)
           },
       },
        {
-          "sequential-multiple",
-          "Sequential addressing with multiple elements per thread",
+          "sequential-multiple-load-warpshuffle",
+          "Sequential addressing with add-during-load and multiple elements per thread along with warp shuffle reduction",
           reduction_args,
           [](const RunConfig &c)
           {
+            std::cout << "Running Sequential Addressing with add-during-load and multiple elements per thread along with warp shuffle reduction" << std::endl;
             unsigned long long array_len = get_ull(c, "--n", 8192ULL);
             size_t mem_size = array_len * sizeof(float);
             float *h_A = (float *)malloc(mem_size);

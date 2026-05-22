@@ -1,7 +1,7 @@
 vec_add_sources = ['vec_add.cu']
 vec_add_arch = get_option('gpu_arch')
 vec_add_cuda_args = ['--use_fast_math', '-lineinfo', '-arch=' + vec_add_arch]
-vec_add_cubin_args = ['--cubin'] + vec_add_cuda_args
+vec_add_cubin_args = ['--cubin', '-lineinfo', '-arch=' + vec_add_arch]
 
 vec_add_target_override = []
 if get_option('enable_profiling_build')
