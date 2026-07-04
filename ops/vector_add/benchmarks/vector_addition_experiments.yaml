@@ -1,0 +1,126 @@
+# Vector-add experiment matrix.
+#
+# This file is consumed only by the Python matrix runner, so YAML comments are
+# useful for documenting the purpose of each sweep group.
+experiment: vector_addition
+
+# Optional profiler defaults used by tools/profile_matrix_runner.py.
+# Command-line flags still work and override these scalar values when both are set.
+profilers:
+  ncu:
+    replay-mode: application
+    profiler-set: detailed
+    sections: []
+    args: []
+  nsys:
+    trace: cuda,nvtx,osrt
+    sample: none
+    args: []
+
+sweeps:
+  # Small and Medium - single stream, single chunk which fits in GPU memory
+  # Pageable Memory Vector Addition
+  - variant: pageable
+    label: small
+    notes: Pageable host memory, smaller working set.
+    args:
+      n: 268435456 # 1024 * 1024 * 256
+
+  - variant: pageable
+    label: medium
+    notes: Pageable host memory, medium working set.
+    args:
+      n: 268435456 # 1024 * 1024 * 256
+
+  - variant: pageable
+    label: medium-vectorized
+    notes: Pageable host memory, medium working set, vectorized kernel.
+    args:
+      n: 268435456 # 1024 * 1024 * 256
+      vectorized: true
+
+  # Pinned Memory Vector Addition - single stream, single chunk
+  - variant: pinned
+    label: small
+    notes: Pinned host memory, smaller working set.
+    args:
+      n: 67108864 # 1024 * 1024 * 64
+
+  - variant: pinned
+    label: medium
+    notes: Pinned host memory, medium working set.
+    args:
+      n: 268435456 # 1024 * 1024 * 256
+  
+  - variant: pinned
+    label: medium-vectorized
+    notes: Pinned host memory, medium working set, vectorized kernel.
+    args:
+      n: 268435456 # 1024 * 1024 * 256
+      vectorized: true
+
+  # Large - multi chunked experiments
+  # Pageable memory 
+  - variant: pageable-large
+    label: chunk-256m
+    notes: Chunked pageable memory.
+    args:
+      n: 268435456 # 1024 * 1024 * 256
+      free-mem-threshold: 0.2
+
+  - variant: pageable-large
+    label: chunk-512m
+    notes: Chunked pageable memory.
+    args:
+      n:  536870912 # 1024 * 1024 * 512
+      free-mem-threshold: 0.2
+
+  # Pinned memory - Multi-stream
+  - variant: pinned-large
+    label: s1-512m
+    notes: Pinned host memory - multi-stream run with 1 stream.
+    args:
+      n: 536870912 # 1024 * 1024 * 512
+      free-mem-threshold: 0.2
+      streams: 1
+
+  - variant: pinned-large
+    label: s2-512m
+    notes: Pinned host memory - multi-stream run with 2 streams.
+    args:
+      n: 536870912 # 1024 * 1024 * 512
+      free-mem-threshold: 0.2
+      streams: 2
+
+  - variant: pinned-large
+    label: s3-512m
+    notes: Pinned host memory - multi-stream run with 3 streams.
+    args:
+      n: 536870912 # 1024 * 1024 * 512
+      free-mem-threshold: 0.2
+      streams: 3
+
+  - variant: pinned-large
+    label: s4-512m
+    notes: Pinned host memory - multi-stream run with 4 streams.
+    args:
+      n: 536870912 # 1024 * 1024 * 512
+      free-mem-threshold: 0.2
+      streams: 4
+
+  # ─── Triton variants ──────────────────────────────────────────────────────
+  # Run with: python tools/profile_matrix_runner.py \
+  #             --matrix ops/vector_add/benchmarks/vector_addition_experiments.yaml \
+  #             --binary ops/vector_add/kernels/triton/run.py \
+  #             --tool ncu --variant triton-basic
+  - variant: triton-basic
+    label: medium
+    notes: Triton blocked add, BLOCK_SIZE=1024, 256 M elements.
+    args:
+      n: 268435456
+
+  - variant: triton-vectorized
+    label: medium
+    notes: Triton blocked add with evict_first, BLOCK_SIZE=4096, 256 M elements.
+    args:
+      n: 268435456

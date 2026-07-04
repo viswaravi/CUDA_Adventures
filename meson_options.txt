@@ -16,5 +16,19 @@ option(
   'enable_cubin_export',
   type: 'boolean',
   value: false,
-  description: 'Export CUBIN files for vector addition and other kernels',
+  description: 'Export CUBIN files for all op kernel libs',
+)
+
+option(
+  'enable_ptx_export',
+  type: 'boolean',
+  value: false,
+  description: 'Export PTX files for all op kernel libs',
+)
+
+option(
+  'enable_sass_export',
+  type: 'boolean',
+  value: false,
+  description: 'Export SASS via cuobjdump for all op kernel libs (requires enable_cubin_export=true)',
 )

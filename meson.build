@@ -7,7 +7,10 @@ project(
 )
 
 subdir('utils')
-subdir('1_vector_addition')
-subdir('2_reduction_prefixsum')
-subdir('3_matmul_rotation')
-subdir('4_convolution')
+subdir('ops/vector_add')
+subdir('ops/reduce')
+subdir('ops/prefix_sum')
+subdir('ops/matmul')
+subdir('ops/rotation')
+subdir('ops/conv2d')
+# subdir('ops/attention')  # uncomment when kernel stubs are filled
