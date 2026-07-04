@@ -1,0 +1,239 @@
+experiment: vector_addition
+
+defaults:
+  op: vector_add
+  dtype: int32
+  validate: true
+  warmup: 5
+  repeats: 20
+
+profilers:
+  ncu:
+    replay-mode: application
+    profiler-set: detailed
+    sections: []
+    args: []
+  nsys:
+    trace: cuda,nvtx,osrt
+    sample: none
+    args: []
+
+# serves as a reference for the available capabilities of each backend, used to filter out invalid sweeps
+backend_capabilities:
+  cuda:
+    executable: ./build/ops/vector_add/ops_vector_add_cuda_runner
+    kernels: [scalar, vectorized]
+    memory: [pageable, pinned]
+    execution: [single_stream, chunked, chunked_multistream]
+    dtypes: [int32]
+
+  triton:
+    executable: ops/vector_add/backends/triton/run.py
+    kernels: [block]
+    memory: [device_only, pinned]
+    execution: [single_stream]
+    dtypes: [float32]
+
+  cublas:
+    executable: ./build/ops/vector_add/ops_vector_add_cublas_runner
+    kernels: [saxpy_reference]
+    memory: [device_only, pinned]
+    execution: [single_stream]
+    dtypes: [float32]
+
+# creates profiling variants to run, generates ncu and nsys profiling reports for each variant
+sweeps:
+  # CUDA backend baseline
+  - id: cuda_pageable_scalar_256m
+    group: cuda_baseline
+    backend: cuda
+    kernel: scalar
+    memory:
+      host: pageable
+    execution:
+      mode: single_stream
+      streams: 1
+      chunked: false
+    shape:
+      n: 268435456
+    tuning:
+      vector_width: 4
+
+  - id: cuda_pageable_vectorized_256m
+    group: cuda_vectorized_comparison
+    backend: cuda
+    kernel: vectorized
+    memory:
+      host: pageable
+    execution:
+      mode: single_stream
+      streams: 1
+      chunked: false
+    shape:
+      n: 268435456
+    tuning:
+      vector_width: 4
+
+  # CUDA pinned baseline
+  - id: cuda_pinned_scalar_64m
+    group: cuda_pinned
+    backend: cuda
+    kernel: scalar
+    memory:
+      host: pinned
+    execution:
+      mode: single_stream
+      streams: 1
+      chunked: false
+    shape:
+      n: 67108864
+
+  - id: cuda_pinned_scalar_256m
+    group: cuda_pinned
+    backend: cuda
+    kernel: scalar
+    memory:
+      host: pinned
+    execution:
+      mode: single_stream
+      streams: 1
+      chunked: false
+    shape:
+      n: 268435456
+
+  - id: cuda_pinned_vectorized_256m
+    group: cuda_vectorized_comparison
+    backend: cuda
+    kernel: vectorized
+    memory:
+      host: pinned
+    execution:
+      mode: single_stream
+      streams: 1
+      chunked: false
+    shape:
+      n: 268435456
+
+  # CUDA large chunked transfers
+  - id: cuda_pageable_chunked_256m
+    group: cuda_chunked
+    backend: cuda
+    kernel: scalar
+    memory:
+      host: pageable
+    execution:
+      mode: chunked
+      streams: 1
+      chunked: true
+      free_mem_threshold: 0.2
+    shape:
+      n: 268435456
+
+  - id: cuda_pageable_chunked_512m
+    group: cuda_chunked
+    backend: cuda
+    kernel: scalar
+    memory:
+      host: pageable
+    execution:
+      mode: chunked
+      streams: 1
+      chunked: true
+      free_mem_threshold: 0.2
+    shape:
+      n: 536870912
+    tuning:
+      vector_width: 4
+
+  # CUDA pinned multi-stream overlap
+  - id: cuda_pinned_s1_scalar_512m
+    group: cuda_stream_overlap
+    backend: cuda
+    kernel: scalar
+    memory:
+      host: pinned
+    execution:
+      mode: chunked_multistream
+      streams: 1
+      chunked: true
+      free_mem_threshold: 0.2
+    shape:
+      n: 536870912
+
+  - id: cuda_pinned_s2_scalar_512m
+    group: cuda_stream_overlap
+    backend: cuda
+    kernel: scalar
+    memory:
+      host: pinned
+    execution:
+      mode: chunked_multistream
+      streams: 2
+      chunked: true
+      free_mem_threshold: 0.2
+    shape:
+      n: 536870912
+
+  - id: cuda_pinned_s3_scalar_512m
+    group: cuda_stream_overlap
+    backend: cuda
+    kernel: scalar
+    memory:
+      host: pinned
+    execution:
+      mode: chunked_multistream
+      streams: 3
+      chunked: true
+      free_mem_threshold: 0.2
+    shape:
+      n: 536870912
+
+  - id: cuda_pinned_s4_vectorized_512m
+    group: cuda_stream_overlap
+    backend: cuda
+    kernel: vectorized
+    memory:
+      host: pinned
+    execution:
+      mode: chunked_multistream
+      streams: 4
+      chunked: true
+      free_mem_threshold: 0.2
+    shape:
+      n: 536870912
+    tuning:
+      vector_width: 4
+
+  # Triton baseline
+  - id: triton_block_256m
+    group: triton_baseline
+    backend: triton
+    kernel: block
+    dtype: float32
+    memory:
+      host: pinned
+    execution:
+      mode: single_stream
+      streams: 1
+      chunked: false
+    shape:
+      n: 268435456
+    tuning:
+      block_size: 1024
+
+  # cuBLAS SAXPY reference
+  - id: cublas_saxpy_reference_256m
+    group: library_reference
+    backend: cublas
+    kernel: saxpy_reference
+    dtype: float32
+    memory:
+      host: pinned
+    execution:
+      mode: single_stream
+      streams: 1
+      chunked: false
+    shape:
+      n: 268435456
+    params:
+      alpha: 1.0

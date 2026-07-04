@@ -1,0 +1,49 @@
+experiment: matmul
+
+defaults:
+  op: matmul
+  backend: cuda
+  dtype: float32
+  validate: true
+  warmup: 0
+  repeats: 1
+
+profilers:
+  ncu:
+    replay-mode: kernel
+    profiler-set: detailed
+    sections: []
+    args: []
+  nsys:
+    trace: cuda,nvtx,osrt
+    sample: none
+    args: []
+
+backend_capabilities:
+  cuda:
+    executable: ./build/ops/matmul/ops_matmul_cuda_runner
+    kernels: [matmul-naive, matmul-shared, transpose-naive, transpose-padded]
+    memory: []
+    execution: []
+    dtypes: [float32]
+
+sweeps:
+  - id: matmul_naive_small
+    group: small
+    kernel: matmul-naive
+    shape: {m: 512, n: 512, k: 512}
+
+  - id: matmul_shared_small
+    group: small
+    kernel: matmul-shared
+    shape: {m: 512, n: 512, k: 512}
+
+  - id: transpose_naive_medium
+    group: medium
+    kernel: transpose-naive
+    shape: {m: 1024, n: 1024, k: 1024}
+
+  - id: transpose_padded_medium
+    group: medium
+    kernel: transpose-padded
+    shape: {m: 1024, n: 1024, k: 1024}

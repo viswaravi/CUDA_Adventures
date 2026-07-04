@@ -9,29 +9,29 @@ cuobjdump = find_program('cuobjdump', required: false)
 
 libops_conv2d_cuda = static_library(
     'ops_conv2d_cuda',
-    'kernels/cuda/kernels.cu',
+    'backends/cuda/kernels.cu',
     dependencies: cuda_utils_dep,
     cuda_args: cuda_args,
     override_options: target_override)
 
 libops_conv2d_cuda_dep = declare_dependency(
     link_with: libops_conv2d_cuda,
-    include_directories: include_directories('kernels/cuda'))
+    include_directories: include_directories('backends/cuda'))
 
-executable('ops_conv2d_bench',
-    'launcher/main.cu',
+executable('ops_conv2d_cuda_runner',
+    'backends/cuda/conv2d_cuda_main.cu',
     dependencies: [cuda_utils_dep, libops_conv2d_cuda_dep],
     cuda_args: cuda_args,
     override_options: target_override)
 
 # fastConv_1D / fastConv_2D have pre-existing issues (missing cuFFT linking,
 # undefined variables). Wire them in here once fixed.
-# executable('ops_conv2d_fft1d', 'kernels/cuda/fastConv_1D.cu', ...)
-# executable('ops_conv2d_fft2d', 'kernels/cuda/fastConv_2D.cu', ...)
+# executable('ops_conv2d_fft1d', 'backends/cuda/fastConv_1D.cu', ...)
+# executable('ops_conv2d_fft2d', 'backends/cuda/fastConv_2D.cu', ...)
 
 if get_option('enable_ptx_export')
     custom_target('ops_conv2d_ptx',
-        input: 'kernels/cuda/kernels.cu',
+        input: 'backends/cuda/kernels.cu',
         output: 'conv2d_kernels.ptx',
         command: [nvcc, '--ptx', '-arch=' + conv_arch, '-lineinfo',
                   '-I' + join_paths(meson.project_source_root(), 'utils'),
@@ -41,7 +41,7 @@ endif
 
 if get_option('enable_cubin_export')
     cubin_tgt = custom_target('ops_conv2d_cubin',
-        input: 'kernels/cuda/kernels.cu',
+        input: 'backends/cuda/kernels.cu',
         output: 'conv2d_kernels.cubin',
         command: [nvcc, '--cubin', '-arch=' + conv_arch, '-lineinfo',
                   '-I' + join_paths(meson.project_source_root(), 'utils'),

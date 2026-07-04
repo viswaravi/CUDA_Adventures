@@ -47,22 +47,32 @@ This repository contains a series of progressively advancing CUDA programming ta
 
 ## Compiling
 
-All tasks share a common build system based on Meson. Each task directory contains a `meson.build` file defining the build targets for that task. To compile the binaries for a task, run:
+All tasks share a common build system based on Meson. Each task directory contains a `meson.build` file defining the build targets for that task. Configure once, then build the target you are actively working on:
 ```bash
 meson setup build
 
-# Compile all targets
-meson compile -C build
-
-# Or compile a specific target
+# Compile a specific target
 meson compile -C build <target-name>
+```
+
+CUDA ops use backend-owned runners with normalized flags. To build a single backend runner target:
+
+```bash
+meson compile -C build ops_vector_add_cuda_runner
 ```
 
 ---
 
 ## Profiling
 
-Reports are stored under `profiling/<experiment>/<tool>/<variant>/<label>/`.
+Reports are stored under `profiling/<experiment>/<tool>/<id parts>/`, where the
+normalized sweep id is split on underscores. For example,
+`cuda_pinned_scalar_64m` writes under
+`profiling/vector_addition/ncu/cuda/pinned/scalar/64m/`.
+
+Backend runner executables are declared in each operation's `experiments.yaml`
+under `backend_capabilities.<backend>.executable`. CLI flags such as `--binary`
+or `--cuda-binary` override the YAML path for ad hoc runs.
 
 ### Prerequisites
 
@@ -98,45 +108,58 @@ python tools/profile_runner.py \
 ```
 
 Use the tool-specific switches for common options such as NCU `--replay-mode` / `--set`
-or NSYS `--trace` / `--sample`. For anything else, repeat `--profiler-arg=<flag>`.
+or NSYS `--trace` / `--sample`. With `--config` and `--id`, defaults are read
+from the YAML `profilers:` block and CLI switches override them. For anything
+else, repeat `--profiler-arg=<flag>`.
 
-**Example — NCU, `pageable/small`**
+**Example — NCU, CUDA vector-add**
 ```bash
 python tools/profile_runner.py \
   --tool ncu \
   --profiler-bin /usr/bin/ncu \
-  --binary ./build/1_vector_addition/vec_add \
-  --output-dir profiling/vec_add/ncu/pageable/small \
-  --report-stem pageable_small \
+  --binary ./build/ops/vector_add/ops_vector_add_cuda_runner \
+  --output-dir profiling/vector_addition/ncu/cuda/manual \
+  --report-stem cuda_pageable_scalar \
   --ncu-replay-mode kernel \
   --ncu-profiler-set full \
-  -- --variant pageable --n 67108864
+  -- --op vector_add --kernel scalar --dtype int32 \
+     --n 67108864 --memory-host pageable --execution-mode single_stream
 ```
 
-**Example — NSYS, `pinned/medium`**
+**Example — NSYS from normalized config**
 ```bash
 python tools/profile_runner.py \
+  --config ops/vector_add/experiments.yaml \
+  --id cuda_pinned_s4_vectorized_512m \
   --tool nsys \
-  --profiler-bin /usr/bin/nsys \
-  --binary ./build/1_vector_addition/vec_add \
-  --output-dir profiling/vec_add/nsys/pinned/medium \
-  --report-stem pinned_medium \
-  -- --variant pinned --n 268435456
+  --profiler-bin /usr/bin/nsys
+```
+
+**Example — NCU from one normalized sweep**
+```bash
+python tools/profile_runner.py \
+  --config ops/vector_add/experiments.yaml \
+  --id cuda_pinned_scalar_64m \
+  --tool ncu \
+  --profiler-bin /usr/bin/ncu
 ```
 
 ---
 
-### Full experiment matrix sweep (`profile_matrix_runner.py`)
+### Full experiment matrix sweep (`matrix_runner.py`)
 
 Runs all sweep entries defined in a YAML experiment matrix in sequence.
 Output paths are derived automatically from the matrix metadata — no manual path construction needed.
 
 **Syntax**
 ```bash
-python tools/profile_matrix_runner.py \
+python tools/matrix_runner.py \
   --matrix <path-to-yaml> \
   --tool <ncu|nsys> \
-  --binary <path-to-binary> \
+  [--binary <path-to-binary>] \
+  [--cuda-binary <path>] \
+  [--triton-binary <path>] \
+  [--cublas-binary <path>] \
   [--profiler-bin <path>]   # defaults: ncu=/usr/bin/ncu, nsys=/usr/bin/nsys \
   [--output-dir <dir>]      # default: profiling \
   [--build-tag <tag>]       # default: dev \
@@ -147,8 +170,12 @@ python tools/profile_matrix_runner.py \
   [--nsys-sample <mode>] \
   [--nsys-capture-range <range>] \
   [--profiler-arg=<raw-profiler-flag>]... \
-  [--label <label>]         # run only this entry (single-shot mode) \
-  [--variant <variant>]     # disambiguate when multiple entries share the same label
+  [--id <case-id>]          # run only this normalized case \
+  [--backend <backend>] \
+  [--kernel <kernel>] \
+  [--memory <host-memory>] \
+  [--execution <mode>] \
+  [--group <group>]
 ```
 
 The YAML file can also define profiler defaults:
@@ -172,47 +199,42 @@ then per-entry overrides, then explicit CLI flags.
 
 **Example — NCU sweep over all vec_add experiments**
 ```bash
-python tools/profile_matrix_runner.py \
-  --matrix 1_vector_addition/experiments.yaml \
+python tools/matrix_runner.py \
+  --matrix ops/vector_add/experiments.yaml \
   --tool ncu \
-  --binary ./build/1_vector_addition/vec_add \
   --ncu-replay-mode kernel \
   --ncu-profiler-set full
 ```
 
 **Example — NSYS sweep with a custom build tag**
 ```bash
-python tools/profile_matrix_runner.py \
-  --matrix 1_vector_addition/experiments.yaml \
+python tools/matrix_runner.py \
+  --matrix ops/vector_add/experiments.yaml \
   --tool nsys \
-  --binary ./build/1_vector_addition/vec_add \
   --build-tag v1
 ```
 
-**Example — NCU, single entry by label + variant**
+**Example — NCU, single normalized case**
 
-Use `--label` to pick one entry from the matrix without writing an ad-hoc YAML file.
-If two entries have the same label (e.g. both `pageable` and `pinned` have `label: small`), add `--variant` to disambiguate.
+Use `--id` to pick one entry from the matrix without writing an ad-hoc YAML file.
 
 ```bash
-# pageable/small only
-python tools/profile_matrix_runner.py \
-  --matrix 1_vector_addition/experiments.yaml \
+# CUDA stream-overlap case only
+python tools/matrix_runner.py \
+  --matrix ops/vector_add/experiments.yaml \
   --tool ncu \
-  --binary ./build/1_vector_addition/vec_add \
-  --variant pageable \
-  --label small
+  --id cuda_pinned_s4_vectorized_512m
 ```
 
 ```bash
-# streamed-large/s4-256m only
-python tools/profile_matrix_runner.py \
-  --matrix 1_vector_addition/experiments.yaml \
+# Triton cases only
+python tools/matrix_runner.py \
+  --matrix ops/vector_add/experiments.yaml \
   --tool ncu \
-  --binary ./build/1_vector_addition/vec_add \
-  --label s4-256m
+  --backend triton
 ```
 
-Reports land at `profiling/vec_add/ncu/<variant>/<label>/`.
+Reports land at `profiling/<experiment>/<tool>/<id parts>/`, where `<id parts>`
+comes from splitting the normalized case id on underscores.
 
 ---

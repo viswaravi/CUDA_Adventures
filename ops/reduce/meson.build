@@ -6,24 +6,24 @@ cuobjdump = find_program('cuobjdump', required: false)
 
 libops_reduce_cuda = static_library(
     'ops_reduce_cuda',
-    'kernels/cuda/kernels.cu',
+    'backends/cuda/kernels.cu',
     dependencies: cuda_utils_dep,
     cuda_args: cuda_args,
     override_options: target_override)
 
 libops_reduce_cuda_dep = declare_dependency(
     link_with: libops_reduce_cuda,
-    include_directories: include_directories('kernels/cuda'))
+    include_directories: include_directories('backends/cuda'))
 
-executable('ops_reduce_bench',
-    'launcher/main.cu',
+executable('ops_reduce_cuda_runner',
+    'backends/cuda/reduce_cuda_main.cu',
     dependencies: [cuda_utils_dep, libops_reduce_cuda_dep],
     cuda_args: cuda_args,
     override_options: target_override)
 
 if get_option('enable_ptx_export')
     custom_target('ops_reduce_ptx',
-        input: 'kernels/cuda/kernels.cu',
+        input: 'backends/cuda/kernels.cu',
         output: 'reduce_kernels.ptx',
         command: [nvcc, '--ptx', '-arch=' + reduce_arch, '-lineinfo',
                   '-I' + join_paths(meson.project_source_root(), 'utils'),
@@ -33,7 +33,7 @@ endif
 
 if get_option('enable_cubin_export')
     cubin_tgt = custom_target('ops_reduce_cubin',
-        input: 'kernels/cuda/kernels.cu',
+        input: 'backends/cuda/kernels.cu',
         output: 'reduce_kernels.cubin',
         command: [nvcc, '--cubin', '-arch=' + reduce_arch, '-lineinfo',
                   '-I' + join_paths(meson.project_source_root(), 'utils'),

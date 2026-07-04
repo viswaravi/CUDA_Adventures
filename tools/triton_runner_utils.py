@@ -31,23 +31,29 @@ def make_arg_parser(description: str = "Triton kernel runner") -> argparse.Argum
 
     Standard flags
     --------------
-    --variant       Name of the kernel variant to run (required).
-    --n             Problem size — interpretation is op-specific (default 1 048 576).
+    --op            Operation name (default "unknown").
+    --kernel        Stable kernel name exposed by the backend runner (required).
+    --dtype         Input/output dtype (default "float32").
+    --n             Problem size; interpretation is op-specific (default 1 048 576).
     --device        CUDA device index (default 0).
     --warmup        Warm-up iterations before timing (default 25).
-    --rep           Timed repetitions for throughput measurement (default 100).
+    --repeats       Timed repetitions for throughput measurement (default 100).
     --export-ptx    Optional path; if given, PTX is written here and the runner exits.
     """
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--variant", required=True,
-                        help="Kernel variant name (must match an entry in the op's YAML sweeps)")
+    parser.add_argument("--op", default="unknown",
+                        help="Operation name")
+    parser.add_argument("--kernel", required=True,
+                        help="Stable kernel name exposed by the backend runner")
+    parser.add_argument("--dtype", default="float32",
+                        help="Input/output dtype")
     parser.add_argument("--n", type=int, default=1_048_576,
                         help="Problem size (elements)")
     parser.add_argument("--device", type=int, default=0,
                         help="CUDA device index")
     parser.add_argument("--warmup", type=int, default=25,
                         help="Warm-up iterations")
-    parser.add_argument("--rep", type=int, default=100,
+    parser.add_argument("--repeats", type=int, default=100,
                         help="Timed repetitions for throughput measurement")
     parser.add_argument("--export-ptx", metavar="PATH", default=None,
                         help="Write compiled PTX to this path and exit")

@@ -1,0 +1,53 @@
+experiment: rotation
+
+defaults:
+  op: rotation
+  backend: cuda
+  dtype: float32
+  validate: true
+  warmup: 0
+  repeats: 1
+
+profilers:
+  ncu:
+    replay-mode: application
+    profiler-set: detailed
+    sections: []
+    args: []
+  nsys:
+    trace: cuda,nvtx,osrt
+    sample: none
+    args: []
+
+backend_capabilities:
+  cuda:
+    executable: ./build/ops/rotation/ops_rotation_cuda_runner
+    kernels:
+      - rotation-naive
+      - rotation-bbox-coop
+      - rotation-bbox-strided
+      - texture-interpolation
+    memory: []
+    execution: []
+    dtypes: [float32]
+
+sweeps:
+  - id: rotation_naive_a45
+    group: a45
+    kernel: rotation-naive
+    params: {image: res/cuda.png, angle: 45}
+
+  - id: rotation_bbox_coop_a45
+    group: a45
+    kernel: rotation-bbox-coop
+    params: {image: res/cuda.png, angle: 45}
+
+  - id: rotation_bbox_strided_a45
+    group: a45
+    kernel: rotation-bbox-strided
+    params: {image: res/cuda.png, angle: 45}
+
+  - id: texture_interpolation_baseline
+    group: baseline
+    kernel: texture-interpolation
+    params: {image: res/cuda.png}

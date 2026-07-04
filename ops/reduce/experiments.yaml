@@ -1,0 +1,80 @@
+experiment: reduction
+
+defaults:
+  op: reduce
+  backend: cuda
+  dtype: float32
+  validate: true
+  warmup: 0
+  repeats: 1
+
+profilers:
+  ncu:
+    replay-mode: kernel
+    profiler-set: detailed
+    sections: []
+    args: []
+  nsys:
+    trace: cuda,nvtx,osrt
+    sample: none
+    args: []
+
+# report available capabilities for each backend, used to filter out invalid sweeps
+backend_capabilities:
+  cuda:
+    executable: ./build/ops/reduce/ops_reduce_cuda_runner
+    kernels:
+      - interleaved-divergent
+      - interleaved-bank-conflicts
+      - sequential-idle
+      - sequential-add-load
+      - sequential-last-unroll
+      - sequential-full-unroll
+      - sequential-multiple-load-warpshuffle
+      - atomic
+      - warp-primitives
+    memory: []
+    execution: []
+    dtypes: [float32]
+
+# profiling variants to run, generates ncu and nsys profiling reports for each variant
+sweeps:
+  - id: interleaved_divergent_small
+    group: small
+    kernel: interleaved-divergent
+    shape: {n: 1000000}
+
+  - id: interleaved_bank_conflicts_small
+    group: small
+    kernel: interleaved-bank-conflicts
+    shape: {n: 1000000}
+
+  - id: sequential_idle_small
+    group: small
+    kernel: sequential-idle
+    shape: {n: 1000000}
+
+  - id: sequential_add_load_small
+    group: small
+    kernel: sequential-add-load
+    shape: {n: 1000000}
+
+  - id: sequential_last_unroll_small
+    group: small
+    kernel: sequential-last-unroll
+    shape: {n: 1000000}
+
+  - id: sequential_full_unroll_small
+    group: small
+    kernel: sequential-full-unroll
+    shape: {n: 1000000}
+
+  - id: sequential_multiple_load_warpshuffle_small
+    group: small
+    kernel: sequential-multiple-load-warpshuffle
+    shape: {n: 1000000}
+
+  - id: atomic_small
+    group: small
+    kernel: atomic
+    shape: {n: 1000000}

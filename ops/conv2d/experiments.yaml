@@ -1,0 +1,59 @@
+experiment: conv2d
+
+defaults:
+  op: conv2d
+  backend: cuda
+  dtype: float32
+  validate: true
+  warmup: 0
+  repeats: 1
+
+profilers:
+  ncu:
+    replay-mode: application
+    profiler-set: detailed
+    sections: []
+    args: []
+  nsys:
+    trace: cuda,nvtx,osrt
+    sample: none
+    args: []
+
+backend_capabilities:
+  cuda:
+    executable: ./build/ops/conv2d/ops_conv2d_cuda_runner
+    kernels:
+      - rgb2gray
+      - conv-naive
+      - conv-shared-single
+      - conv-shared-coop
+      - conv-shared-struct
+    memory: []
+    execution: []
+    dtypes: [float32]
+
+sweeps:
+  - id: rgb2gray
+    group: baseline
+    kernel: rgb2gray
+    params: {image: res/cuda.png}
+
+  - id: conv_naive
+    group: baseline
+    kernel: conv-naive
+    params: {image: res/cuda.png, filter: 1}
+
+  - id: conv_shared_single
+    group: shared
+    kernel: conv-shared-single
+    params: {image: res/cuda.png, filter: 1}
+
+  - id: conv_shared_coop
+    group: shared
+    kernel: conv-shared-coop
+    params: {image: res/cuda.png, filter: 1}
+
+  - id: conv_shared_struct
+    group: shared
+    kernel: conv-shared-struct
+    params: {image: res/cuda.png, filter: 1}

@@ -1,0 +1,54 @@
+experiment: prefix_sum
+
+defaults:
+  op: prefix_sum
+  backend: cuda
+  dtype: float32
+  validate: true
+  warmup: 0
+  repeats: 1
+
+profilers:
+  ncu:
+    replay-mode: application
+    profiler-set: detailed
+    sections: []
+    args: []
+  nsys:
+    trace: cuda,nvtx,osrt
+    sample: none
+    args: []
+
+backend_capabilities:
+  cuda:
+    executable: ./build/ops/prefix_sum/ops_prefix_sum_cuda_runner
+    kernels: [naive, fast, fast2, double, hier]
+    memory: []
+    execution: []
+    dtypes: [float32]
+
+sweeps:
+  - id: naive_small
+    group: small
+    kernel: naive
+    shape: {n: 1024}
+
+  - id: fast_small
+    group: small
+    kernel: fast
+    shape: {n: 1024}
+
+  - id: fast2_small
+    group: small
+    kernel: fast2
+    shape: {n: 1024}
+
+  - id: double_small
+    group: small
+    kernel: double
+    shape: {n: 1024}
+
+  - id: hier_medium
+    group: medium
+    kernel: hier
+    shape: {n: 1048576}
