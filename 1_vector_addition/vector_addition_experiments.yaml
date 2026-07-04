@@ -32,6 +32,13 @@ sweeps:
     args:
       n: 268435456 # 1024 * 1024 * 256
 
+  - variant: pageable
+    label: medium-vectorized
+    notes: Pageable host memory, medium working set, vectorized kernel.
+    args:
+      n: 268435456 # 1024 * 1024 * 256
+      vectorized: true
+
   # Pinned Memory Vector Addition - single stream, single chunk
   - variant: pinned
     label: small
@@ -44,6 +51,13 @@ sweeps:
     notes: Pinned host memory, medium working set.
     args:
       n: 268435456 # 1024 * 1024 * 256
+  
+  - variant: pinned
+    label: medium-vectorized
+    notes: Pinned host memory, medium working set, vectorized kernel.
+    args:
+      n: 268435456 # 1024 * 1024 * 256
+      vectorized: true
 
   # Large - multi chunked experiments
   # Pageable memory 

@@ -69,8 +69,9 @@ Reports are stored under `profiling/<experiment>/<tool>/<variant>/<label>/`.
 Activate the project virtual environment once before running any profiling commands:
 
 ```bash
-source activate
+source .venv/bin/activate
 ```
+
 
 ---
 
