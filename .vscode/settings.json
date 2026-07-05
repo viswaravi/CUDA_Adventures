@@ -1,5 +1,7 @@
 {
     "files.associations": {
+        "*.cu": "cpp",
+        "*.cuh": "cpp",
         "stdexcept": "cpp",
         "iostream": "cpp",
         "ostream": "cpp",
@@ -62,5 +64,11 @@
         "complex": "cpp",
         "fstream": "cpp"
     },
+    "[cpp]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools",
+        "editor.formatOnSave": true
+    },
+    "C_Cpp.formatting": "clangFormat",
+    "C_Cpp.clang_format_style": "file",
     "python-envs.defaultEnvManager": "ms-python.python:pyenv"
 }

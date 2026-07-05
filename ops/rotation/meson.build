@@ -1,15 +1,8 @@
-rot_arch = get_option('gpu_arch')
-cuda_args = ['--use_fast_math', '-lineinfo', '-arch=' + rot_arch]
-target_override = get_option('enable_profiling_build') ? ['buildtype=release'] : []
-nvcc = find_program('nvcc', required: true)
-cuobjdump = find_program('cuobjdump', required: false)
-
 libops_rotation_cuda = static_library(
     'ops_rotation_cuda',
     'backends/cuda/kernels.cu',
     dependencies: cuda_utils_dep,
-    cuda_args: cuda_args,
-    override_options: target_override)
+    override_options: cuda_target_options)
 
 libops_rotation_cuda_dep = declare_dependency(
     link_with: libops_rotation_cuda,
@@ -18,14 +11,13 @@ libops_rotation_cuda_dep = declare_dependency(
 executable('ops_rotation_cuda_runner',
     'backends/cuda/rotation_cuda_main.cu',
     dependencies: [cuda_utils_dep, libops_rotation_cuda_dep],
-    cuda_args: cuda_args,
-    override_options: target_override)
+    override_options: cuda_target_options)
 
 if get_option('enable_ptx_export')
     custom_target('ops_rotation_ptx',
         input: 'backends/cuda/kernels.cu',
         output: 'rotation_kernels.ptx',
-        command: [nvcc, '--ptx', '-arch=' + rot_arch, '-lineinfo',
+        command: [nvcc, '--ptx'] + cuda_export_args + [
                   '-I' + join_paths(meson.project_source_root(), 'utils'),
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)
@@ -35,7 +27,7 @@ if get_option('enable_cubin_export')
     cubin_tgt = custom_target('ops_rotation_cubin',
         input: 'backends/cuda/kernels.cu',
         output: 'rotation_kernels.cubin',
-        command: [nvcc, '--cubin', '-arch=' + rot_arch, '-lineinfo',
+        command: [nvcc, '--cubin'] + cuda_export_args + [
                   '-I' + join_paths(meson.project_source_root(), 'utils'),
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)

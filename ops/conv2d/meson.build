@@ -1,18 +1,8 @@
-conv_arch = get_option('gpu_arch')
-cuda_args = ['--use_fast_math', '-lineinfo', '-arch=' + conv_arch]
-if get_option('enable_profiling_build')
-    cuda_args += ['-O3']
-endif
-target_override = get_option('enable_profiling_build') ? ['buildtype=release'] : []
-nvcc = find_program('nvcc', required: true)
-cuobjdump = find_program('cuobjdump', required: false)
-
 libops_conv2d_cuda = static_library(
     'ops_conv2d_cuda',
     'backends/cuda/kernels.cu',
     dependencies: cuda_utils_dep,
-    cuda_args: cuda_args,
-    override_options: target_override)
+    override_options: cuda_target_options)
 
 libops_conv2d_cuda_dep = declare_dependency(
     link_with: libops_conv2d_cuda,
@@ -21,8 +11,7 @@ libops_conv2d_cuda_dep = declare_dependency(
 executable('ops_conv2d_cuda_runner',
     'backends/cuda/conv2d_cuda_main.cu',
     dependencies: [cuda_utils_dep, libops_conv2d_cuda_dep],
-    cuda_args: cuda_args,
-    override_options: target_override)
+    override_options: cuda_target_options)
 
 # fastConv_1D / fastConv_2D have pre-existing issues (missing cuFFT linking,
 # undefined variables). Wire them in here once fixed.
@@ -33,7 +22,7 @@ if get_option('enable_ptx_export')
     custom_target('ops_conv2d_ptx',
         input: 'backends/cuda/kernels.cu',
         output: 'conv2d_kernels.ptx',
-        command: [nvcc, '--ptx', '-arch=' + conv_arch, '-lineinfo',
+        command: [nvcc, '--ptx'] + cuda_export_args + [
                   '-I' + join_paths(meson.project_source_root(), 'utils'),
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)
@@ -43,7 +32,7 @@ if get_option('enable_cubin_export')
     cubin_tgt = custom_target('ops_conv2d_cubin',
         input: 'backends/cuda/kernels.cu',
         output: 'conv2d_kernels.cubin',
-        command: [nvcc, '--cubin', '-arch=' + conv_arch, '-lineinfo',
+        command: [nvcc, '--cubin'] + cuda_export_args + [
                   '-I' + join_paths(meson.project_source_root(), 'utils'),
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)

@@ -33,6 +33,7 @@ void initializeInputs(void *a, void *b, void *c, std::uint64_t n, DType dtype) {
   switch (dtype) {
   case DType::Int32: {
     auto *aa = static_cast<int *>(a);
+    
     auto *bb = static_cast<int *>(b);
     auto *cc = static_cast<int *>(c);
     for (std::uint64_t i = 0; i < n; ++i) {

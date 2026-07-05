@@ -163,6 +163,13 @@ Build the migrated vector-add CUDA target:
 meson compile -C build ops_vector_add_cuda_runner
 ```
 
+CUDA compile flags are owned by the root Meson file and shared by every active
+operation. `gpu_arch` selects the target architecture, `enable_cuda_fast_math`
+controls NVCC `--use_fast_math`, and `enable_cuda_lineinfo` controls NVCC
+`-lineinfo` for runner targets and generated PTX/CUBIN exports. Both CUDA flag
+toggles default to `true`; use native Meson build types such as
+`--buildtype=release` for profiling or release-style builds.
+
 The old shared C++ variant registry has been removed. Full-repo builds should
 use normalized direct-parsing runners.
 

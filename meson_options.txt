@@ -6,10 +6,17 @@ option(
 )
 
 option(
-  'enable_profiling_build',
+  'enable_cuda_fast_math',
+  type: 'boolean',
+  value: false,
+  description: 'Enable NVCC --use_fast_math for CUDA targets',
+)
+
+option(
+  'enable_cuda_lineinfo',
   type: 'boolean',
   value: true,
-  description: 'Build for profiling (no -G), keep line info for source/PTX mapping',
+  description: 'Enable NVCC -lineinfo for CUDA targets and generated PTX/CUBIN exports',
 )
 
 option(

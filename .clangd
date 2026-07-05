@@ -1,0 +1,12 @@
+CompileFlags:
+  Add:
+    - -x
+    - cuda
+    - --cuda-gpu-arch=sm_75
+    - --no-cuda-version-check
+  Remove:
+    - -arch=*
+    - --use_fast_math
+    - -lineinfo
+    - -G
+    - -Xcompiler=*

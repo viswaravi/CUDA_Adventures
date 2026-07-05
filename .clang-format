@@ -1,5 +1,8 @@
 BasedOnStyle: LLVM
+Language: Cpp
 IndentWidth: 4
 PointerAlignment: Right
 ColumnLimit: 120
 InsertBraces: true
+# This ensures attributes like <<< >>> kernels don't break the formatter
+WhitespaceSensitiveMacros: ['__global__', '__device__', '__host__']

@@ -55,6 +55,20 @@ meson setup build
 meson compile -C build <target-name>
 ```
 
+CUDA build flags are owned by the root Meson file and shared by every op.
+`enable_cuda_fast_math` and `enable_cuda_lineinfo` default to `true`. Disable
+them when you need strict math behavior or builds without source line mapping:
+
+```bash
+meson setup build -Dgpu_arch=sm_86 -Denable_cuda_fast_math=false -Denable_cuda_lineinfo=false
+```
+
+Use native Meson build types for profiling or release-style builds:
+
+```bash
+meson setup build --buildtype=release -Dgpu_arch=sm_86 -Denable_cuda_lineinfo=true
+```
+
 CUDA ops use backend-owned runners with normalized flags. To build a single backend runner target:
 
 ```bash
