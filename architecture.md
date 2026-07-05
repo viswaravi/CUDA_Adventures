@@ -148,10 +148,12 @@ ops/vector_add/
 
 CUDA vector-add uses `vector_add_cuda_runner.cu` as the executable source. It
 parses the normalized CLI through the op common config and dispatches directly
-to the CUDA implementation.
-The CUDA backend currently supports `int32` with `--kernel scalar` and
-`--kernel vectorized`. Triton vector-add currently supports `float32` with
-`--kernel block`. cuBLAS vector-add is a `float32` SAXPY reference.
+to explicit dtype-specific kernels in `backends/cuda/kernels.cu`. The CUDA
+backend supports `int32`, `float32`, `float16`, and `bfloat16` with
+`--kernel scalar` and `--kernel vectorized`. The vectorized CUDA path maps to
+`vec4` kernels for 32-bit types and pair/half2 kernels for 16-bit types.
+Triton vector-add currently supports `float32` with `--kernel block`. cuBLAS
+vector-add is a `float32` SAXPY reference.
 
 ## Build and Verification
 

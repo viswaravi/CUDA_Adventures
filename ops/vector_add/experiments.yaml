@@ -25,7 +25,7 @@ backend_capabilities:
     kernels: [scalar, vectorized]
     memory: [pageable, pinned]
     execution: [single_stream, chunked, chunked_multistream]
-    dtypes: [int32]
+    dtypes: [int32, float32, float16, bfloat16]
 
   triton:
     executable: ops/vector_add/backends/triton/run.py

@@ -6,8 +6,8 @@
 #include "utils.cuh"
 
 // Error Handling Wrapper
-inline void checkCuda(cudaError_t result, const char *func, const char *file,
-                      int line)
+void checkCuda(cudaError_t result, const char *func, const char *file,
+               int line)
 {
   if (result != cudaSuccess)
   {
@@ -45,7 +45,7 @@ void printDeviceDetails()
 
   printf("\n---Memory Limits per Block---\n");
   printf("Registers per Block: %d\n", prop.regsPerBlock);
-  printf("Shared Memory per Block: %d\n", prop.sharedMemPerBlock);
+  printf("Shared Memory per Block: %zu\n", prop.sharedMemPerBlock);
 
   // printf("\n---Clock Rates---\n");
   // printf("Clock Rate: %d KHz\n", prop.clockRate);

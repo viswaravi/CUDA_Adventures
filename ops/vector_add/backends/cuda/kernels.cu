@@ -1,37 +1,100 @@
-// Legacy int32 CUDA vector_add kernels used for PTX/cubin export experiments.
-//
-// Runtime experiment dispatch lives in vector_add_cuda_runner.cu. This file
-// remains backend-local for PTX/cubin export of the int32 kernels.
+// Explicit CUDA vector_add kernels used by the runtime runner and PTX/SASS
+// export targets. Keep these non-templated so generated symbols are stable and
+// easy to inspect while learning CUDA kernel development.
+
+#include "kernels.cuh"
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
-#include "utils.cuh"
 
-__global__ void addKernel(int *c, const int *a, const int *b,
-                          const unsigned long long length)
-{
-  unsigned long long idx = (blockIdx.x * blockDim.x) + threadIdx.x;
-
-  if (idx < length) {
+__global__ void add_i32_scalar_kernel(const int *a, const int *b, int *c,
+                                      std::uint64_t n) {
+  std::uint64_t idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+  if (idx < n) {
     c[idx] = a[idx] + b[idx];
   }
 }
 
-__global__ void addKernelVectorized(int *c, const int *a, const int *b,
-                                    const unsigned long long length)
-{
-  unsigned long long idx = (blockIdx.x * blockDim.x + threadIdx.x) * 4;
+__global__ void add_i32_vec4_kernel(const int *a, const int *b, int *c,
+                                    std::uint64_t n) {
+  std::uint64_t base = ((blockIdx.x * blockDim.x) + threadIdx.x) * 4;
+  if (base + 4 <= n) {
+    int4 av = reinterpret_cast<const int4 *>(a)[base / 4];
+    int4 bv = reinterpret_cast<const int4 *>(b)[base / 4];
+    int4 cv{av.x + bv.x, av.y + bv.y, av.z + bv.z, av.w + bv.w};
+    reinterpret_cast<int4 *>(c)[base / 4] = cv;
+    return;
+  }
+  for (int i = 0; i < 4 && base + i < n; ++i) {
+    c[base + i] = a[base + i] + b[base + i];
+  }
+}
 
-  if (idx < length) {
-    int4 a_vec = *((int4 *)&a[idx]);
-    int4 b_vec = *((int4 *)&b[idx]);
-    int4 c_vec;
+__global__ void add_f32_scalar_kernel(const float *a, const float *b, float *c,
+                                      std::uint64_t n) {
+  std::uint64_t idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+  if (idx < n) {
+    c[idx] = a[idx] + b[idx];
+  }
+}
 
-    c_vec.x = a_vec.x + b_vec.x;
-    c_vec.y = a_vec.y + b_vec.y;
-    c_vec.z = a_vec.z + b_vec.z;
-    c_vec.w = a_vec.w + b_vec.w;
+__global__ void add_f32_vec4_kernel(const float *a, const float *b, float *c,
+                                    std::uint64_t n) {
+  std::uint64_t base = ((blockIdx.x * blockDim.x) + threadIdx.x) * 4;
+  if (base + 4 <= n) {
+    float4 av = reinterpret_cast<const float4 *>(a)[base / 4];
+    float4 bv = reinterpret_cast<const float4 *>(b)[base / 4];
+    float4 cv{av.x + bv.x, av.y + bv.y, av.z + bv.z, av.w + bv.w};
+    reinterpret_cast<float4 *>(c)[base / 4] = cv;
+    return;
+  }
+  for (int i = 0; i < 4 && base + i < n; ++i) {
+    c[base + i] = a[base + i] + b[base + i];
+  }
+}
 
-    *((int4 *)&c[idx]) = c_vec;
+__global__ void add_f16_scalar_kernel(const half *a, const half *b, half *c,
+                                      std::uint64_t n) {
+  std::uint64_t idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+  if (idx < n) {
+    c[idx] = __hadd(a[idx], b[idx]);
+  }
+}
+
+__global__ void add_f16_half2_kernel(const half *a, const half *b, half *c,
+                                     std::uint64_t n) {
+  std::uint64_t base = ((blockIdx.x * blockDim.x) + threadIdx.x) * 2;
+  if (base + 2 <= n) {
+    half2 av = reinterpret_cast<const half2 *>(a)[base / 2];
+    half2 bv = reinterpret_cast<const half2 *>(b)[base / 2];
+    reinterpret_cast<half2 *>(c)[base / 2] = __hadd2(av, bv);
+    return;
+  }
+  if (base < n) {
+    c[base] = __hadd(a[base], b[base]);
+  }
+}
+
+__global__ void add_bf16_scalar_kernel(const __nv_bfloat16 *a,
+                                       const __nv_bfloat16 *b,
+                                       __nv_bfloat16 *c, std::uint64_t n) {
+  std::uint64_t idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+  if (idx < n) {
+    c[idx] = __float2bfloat16(__bfloat162float(a[idx]) +
+                              __bfloat162float(b[idx]));
+  }
+}
+
+__global__ void add_bf16_pair_kernel(const __nv_bfloat16 *a,
+                                     const __nv_bfloat16 *b, __nv_bfloat16 *c,
+                                     std::uint64_t n) {
+  std::uint64_t base = ((blockIdx.x * blockDim.x) + threadIdx.x) * 2;
+  if (base < n) {
+    c[base] = __float2bfloat16(__bfloat162float(a[base]) +
+                               __bfloat162float(b[base]));
+  }
+  if (base + 1 < n) {
+    c[base + 1] = __float2bfloat16(__bfloat162float(a[base + 1]) +
+                                   __bfloat162float(b[base + 1]));
   }
 }

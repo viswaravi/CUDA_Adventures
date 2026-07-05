@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <cstddef>
 
 enum class Status {
   Ok,
@@ -53,6 +54,18 @@ inline const char *dtypeName(DType dtype) {
   return "unknown";
 }
 
+inline std::size_t dtypeSize(DType dtype) {
+  switch (dtype) {
+  case DType::Int32:
+  case DType::Float32:
+    return 4;
+  case DType::Float16:
+  case DType::BFloat16:
+    return 2;
+  }
+  throw std::runtime_error("Unsupported dtype");
+}
+
 inline Tolerance toleranceFor(DType dtype) {
   switch (dtype) {
   case DType::Int32:
@@ -74,7 +87,7 @@ inline int defaultVectorWidth(DType dtype) {
     return 4;
   case DType::Float16:
   case DType::BFloat16:
-    return 8;
+    return 2;
   }
   return 1;
 }

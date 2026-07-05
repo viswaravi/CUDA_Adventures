@@ -62,4 +62,5 @@ Recent history uses short imperative or conventional-style subjects, for example
 - Always read `architecture.md` before making architectural, runner, schema, backend-layout, or build changes.
 - Always update `architecture.md` in the same change when modifying repo architecture, experiment schema, backend launcher contracts, build targets, or profiling command flow.
 - Always update README/docs when changing build or profiling commands.
+- Before adding a new helper, wrapper, or utility class/function, inspect `utils/` first and prefer existing shared wrappers such as CUDA memory/error helpers. If the helper can reasonably serve multiple ops, add or extend it in `utils/` instead of keeping it op-local.
 - Do not delete or overwrite generated profiling data unless explicitly asked. Avoid unrelated refactors while tuning kernels; performance changes should be easy to isolate from build or CLI changes.
