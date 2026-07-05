@@ -4,10 +4,6 @@
 
 #define BLOCK_WIDTH 1024
 
-// CPU reference implementations
-float reduceCPU(float *A, const unsigned long long length);
-void inclusiveScanCPU(float *A, float *result, const unsigned long long length);
-
 // Kernel variants
 __global__ void inclusiveScan_naive(float *A, float *result, const unsigned long long length);
 __global__ void inclusiveScan_fast(float *A, float *result, const unsigned long long length);

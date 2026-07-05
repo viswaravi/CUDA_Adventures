@@ -18,7 +18,7 @@ class CudaRunner(BackendRunner):
         elif case.op == 'reduce':
             args = self._reduce_args(case)
         elif case.op == 'prefix_sum':
-            args = self._one_dim_args(case)
+            args = self._prefix_sum_args(case)
         elif case.op == 'matmul':
             args = self._matmul_args(case)
         elif case.op in ('rotation', 'conv2d'):
@@ -79,6 +79,20 @@ class CudaRunner(BackendRunner):
     def _reduce_args(case: ExperimentCase) -> list[str]:
         if case.n is None:
             raise BackendRunnerError('Missing required shape.n for reduce')
+        return [
+            '--op', case.op,
+            '--kernel', case.kernel,
+            '--dtype', case.dtype,
+            '--n', str(case.n),
+            '--validate', bool_arg(case.validate),
+            '--warmup', str(case.warmup),
+            '--repeats', str(case.repeats),
+        ]
+
+    @staticmethod
+    def _prefix_sum_args(case: ExperimentCase) -> list[str]:
+        if case.n is None:
+            raise BackendRunnerError('Missing required shape.n for prefix_sum')
         return [
             '--op', case.op,
             '--kernel', case.kernel,

@@ -12,4 +12,12 @@ template <typename T> double hostReduceSum(const T *data, std::size_t length) {
     return sum;
 }
 
+template <typename T> void hostInclusiveScan(const T *input, T *output, std::size_t length) {
+    T sum = static_cast<T>(0);
+    for (std::size_t i = 0; i < length; ++i) {
+        sum = static_cast<T>(sum + input[i]);
+        output[i] = sum;
+    }
+}
+
 } // namespace kernel_lab

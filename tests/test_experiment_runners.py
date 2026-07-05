@@ -99,6 +99,21 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertIn("--repeats", reduce_command)
         self.assertIn("1", reduce_command)
 
+        prefix_sum_case = load_experiment_matrix(
+            ROOT / "ops/prefix_sum/experiments.yaml").cases[0]
+        prefix_sum_command = build_backend_command(prefix_sum_case, runners).argv()
+        self.assertNotIn("--variant", prefix_sum_command)
+        self.assertIn("--kernel", prefix_sum_command)
+        self.assertIn("--n", prefix_sum_command)
+        self.assertIn("--dtype", prefix_sum_command)
+        self.assertIn("float32", prefix_sum_command)
+        self.assertIn("--validate", prefix_sum_command)
+        self.assertIn("true", prefix_sum_command)
+        self.assertIn("--warmup", prefix_sum_command)
+        self.assertIn("0", prefix_sum_command)
+        self.assertIn("--repeats", prefix_sum_command)
+        self.assertIn("1", prefix_sum_command)
+
         matmul_case = load_experiment_matrix(
             ROOT / "ops/matmul/experiments.yaml").cases[0]
         matmul_command = build_backend_command(matmul_case, runners).argv()

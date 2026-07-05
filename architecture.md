@@ -192,6 +192,13 @@ is `ops/reduce/backends/cuda/reduce_cuda_runner.cu`, and the runner accepts
 declared in `ops/reduce/experiments.yaml`, including a full-array
 `warp-primitives` reduction.
 
+Prefix-sum also uses the normalized CUDA runner pattern. Its public config lives
+in `ops/prefix_sum/include/kernel_lab/ops/prefix_sum/config.hpp`, the executable
+source is `ops/prefix_sum/backends/cuda/prefix_sum_cuda_runner.cu`, and the
+runner accepts `--op prefix_sum`, `--kernel`, `--dtype`, `--n`, `--validate`,
+`--warmup`, and `--repeats`. Prefix-sum is currently `float32`-only and
+dispatches every CUDA kernel declared in `ops/prefix_sum/experiments.yaml`.
+
 ## Build and Verification
 
 Build a migrated CUDA runner target:
@@ -199,6 +206,7 @@ Build a migrated CUDA runner target:
 ```bash
 meson compile -C build ops_vector_add_cuda_runner
 meson compile -C build ops_reduce_cuda_runner
+meson compile -C build ops_prefix_sum_cuda_runner
 ```
 
 CUDA compile flags are owned by the root Meson file and shared by every active
