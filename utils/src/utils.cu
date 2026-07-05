@@ -1,9 +1,13 @@
-#include <stdio.h>
+#include <kernel_lab/utils/cuda_utils.cuh>
+
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+
+#include <cstdio>
 #include <iostream>
 #include <string>
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
-#include "utils.cuh"
+
+namespace kernel_lab {
 
 // Error Handling Wrapper
 void checkCuda(cudaError_t result, const char *func, const char *file,
@@ -62,3 +66,5 @@ void printKernelConfig(dim3 grid, dim3 block)
   std::cout << "Threads in X:" << grid.x * block.x << " Y:" << grid.y * block.y
             << " Z:" << grid.z * block.z << std::endl;
 }
+
+} // namespace kernel_lab

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cuda_runtime.h"
+#include <cuda_runtime.h>
 
 #define PI 3.14159265358979323846
 #define BLOCK_WIDTH 32

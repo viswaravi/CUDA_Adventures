@@ -1,4 +1,7 @@
 cublas_dep = meson.get_compiler('cpp').find_library('cublas', required: false)
+ops_vector_add_public_inc = include_directories('include')
+ops_vector_add_public_include_arg = '-I' + join_paths(meson.current_source_dir(), 'include')
+ops_vector_add_cuda_private_inc = include_directories('backends/cuda')
 
 # Kernel static library — contains __global__ kernels only, no main()
 libops_vector_add_cuda = static_library(
@@ -9,7 +12,7 @@ libops_vector_add_cuda = static_library(
 
 libops_vector_add_cuda_dep = declare_dependency(
     link_with: libops_vector_add_cuda,
-    include_directories: include_directories('.', 'common', 'backends/cuda'))
+    include_directories: [ops_vector_add_public_inc, ops_vector_add_cuda_private_inc])
 
 # CUDA runner binary - to test the kernels in the static library
 # Backend - CUDA
@@ -24,7 +27,8 @@ if get_option('enable_ptx_export')
         input: 'backends/cuda/kernels.cu',
         output: 'vector_add_kernels.ptx',
         command: [nvcc, '--ptx'] + cuda_export_args + [
-                  '-I' + join_paths(meson.project_source_root(), 'utils'),
+                  kernel_lab_utils_public_include_arg,
+                  ops_vector_add_public_include_arg,
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)
 endif
@@ -35,7 +39,8 @@ if get_option('enable_cubin_export')
         input: 'backends/cuda/kernels.cu',
         output: 'vector_add_kernels.cubin',
         command: [nvcc, '--cubin'] + cuda_export_args + [
-                  '-I' + join_paths(meson.project_source_root(), 'utils'),
+                  kernel_lab_utils_public_include_arg,
+                  ops_vector_add_public_include_arg,
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)
 
@@ -53,4 +58,4 @@ endif
 executable('ops_vector_add_cublas_runner',
     'backends/cublas/vector_add_cublas_main.cpp',
     dependencies: [cuda_utils_dep, cublas_dep],
-    include_directories: include_directories('.', 'common'))
+    include_directories: ops_vector_add_public_inc)

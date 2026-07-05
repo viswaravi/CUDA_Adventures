@@ -4,8 +4,8 @@
 
 #include "kernels.cuh"
 
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
 
 __global__ void add_i32_scalar_kernel(const int *a, const int *b, int *c,
                                       std::uint64_t n) {

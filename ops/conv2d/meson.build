@@ -1,3 +1,5 @@
+ops_conv2d_private_vendor_inc = include_directories('../../utils')
+
 libops_conv2d_cuda = static_library(
     'ops_conv2d_cuda',
     'backends/cuda/kernels.cu',
@@ -11,6 +13,7 @@ libops_conv2d_cuda_dep = declare_dependency(
 executable('ops_conv2d_cuda_runner',
     'backends/cuda/conv2d_cuda_main.cu',
     dependencies: [cuda_utils_dep, libops_conv2d_cuda_dep],
+    include_directories: ops_conv2d_private_vendor_inc,
     override_options: cuda_target_options)
 
 # fastConv_1D / fastConv_2D have pre-existing issues (missing cuFFT linking,
@@ -23,7 +26,7 @@ if get_option('enable_ptx_export')
         input: 'backends/cuda/kernels.cu',
         output: 'conv2d_kernels.ptx',
         command: [nvcc, '--ptx'] + cuda_export_args + [
-                  '-I' + join_paths(meson.project_source_root(), 'utils'),
+                  kernel_lab_utils_public_include_arg,
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)
 endif
@@ -33,7 +36,7 @@ if get_option('enable_cubin_export')
         input: 'backends/cuda/kernels.cu',
         output: 'conv2d_kernels.cubin',
         command: [nvcc, '--cubin'] + cuda_export_args + [
-                  '-I' + join_paths(meson.project_source_root(), 'utils'),
+                  kernel_lab_utils_public_include_arg,
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)
 

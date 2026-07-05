@@ -14,6 +14,8 @@
 // RunConfig, then convert the string values into their operation-specific
 // config structs using the typed get_* helpers below.
 
+namespace kernel_lab {
+
 struct RunConfig {
   int device = 0;
   bool reset_device = true;
@@ -261,3 +263,5 @@ inline RunConfig parse_args(int argc, char **argv,
 
   return cfg;
 }
+
+} // namespace kernel_lab

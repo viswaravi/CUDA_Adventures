@@ -1,6 +1,6 @@
 #include <cuda_runtime.h>
 #include <iostream>
-#include "utils.cuh"
+#include <kernel_lab/utils/cuda_utils.cuh>
 
 // Kernel to double each element in the 2D array
 __global__ void doubleValues(float* data, size_t pitch, int width, int height) {

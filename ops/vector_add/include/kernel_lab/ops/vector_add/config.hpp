@@ -1,7 +1,7 @@
 #pragma once
 
-#include "cli_args.hpp"
-#include "experiment_types.hpp"
+#include <kernel_lab/utils/cli_args.hpp>
+#include <kernel_lab/utils/experiment_types.hpp>
 
 #include <cstdint>
 #include <stdexcept>
@@ -10,6 +10,8 @@
 
 // Operation-level config shared by vector_add backends. Backends validate the
 // subset they implement, but they should accept the same normalized fields.
+namespace kernel_lab::ops::vector_add {
+
 struct VectorAddConfig {
   DType dtype = DType::Int32;
   std::string kernel = "scalar";
@@ -80,5 +82,8 @@ inline VectorAddConfig vectorAddConfigFromRunConfig(
   if (cfg.free_mem_threshold <= 0.0f || cfg.free_mem_threshold > 1.0f) {
     throw std::runtime_error("--free-mem-threshold must be in (0, 1]");
   }
+  
   return cfg;
 }
+
+} // namespace kernel_lab::ops::vector_add

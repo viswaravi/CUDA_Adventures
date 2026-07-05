@@ -1,5 +1,5 @@
 #include <cuda_runtime.h>
-#include "utils.cuh"
+#include <kernel_lab/utils/cuda_utils.cuh>
 
 // ─── Device helpers ──────────────────────────────────────────────────────────
 

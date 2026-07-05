@@ -25,5 +25,8 @@ cuda_target_options = ['warning_level=0']
 nvcc = find_program('nvcc', required: true)
 cuobjdump = find_program('cuobjdump', required: false)
 
+kernel_lab_utils_public_inc = include_directories('utils/include')
+kernel_lab_utils_public_include_arg = '-I' + join_paths(meson.project_source_root(), 'utils/include')
+
 subdir('utils')
 subdir('ops')

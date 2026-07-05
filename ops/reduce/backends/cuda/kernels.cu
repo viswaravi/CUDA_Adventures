@@ -1,8 +1,8 @@
-#include "cuda_runtime.h"
-#include "device_atomic_functions.h"
-#include "device_functions.h"
-#include "device_launch_parameters.h"
-#include "utils.cuh"
+#include <cuda_runtime.h>
+#include <device_atomic_functions.h>
+#include <device_functions.h>
+#include <device_launch_parameters.h>
+#include <kernel_lab/utils/cuda_utils.cuh>
 #include <stdio.h>
 
 #define BLOCK_WIDTH 1024

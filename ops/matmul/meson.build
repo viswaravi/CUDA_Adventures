@@ -23,7 +23,7 @@ if get_option('enable_ptx_export')
         input: 'backends/cuda/kernels.cu',
         output: 'matmul_kernels.ptx',
         command: [nvcc, '--ptx'] + cuda_export_args + [
-                  '-I' + join_paths(meson.project_source_root(), 'utils'),
+                  kernel_lab_utils_public_include_arg,
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)
 endif
@@ -33,7 +33,7 @@ if get_option('enable_cubin_export')
         input: 'backends/cuda/kernels.cu',
         output: 'matmul_kernels.cubin',
         command: [nvcc, '--cubin'] + cuda_export_args + [
-                  '-I' + join_paths(meson.project_source_root(), 'utils'),
+                  kernel_lab_utils_public_include_arg,
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)
 

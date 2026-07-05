@@ -3,11 +3,11 @@
 // Implements the normalized backend runner contract for the library reference
 // case using cublasSaxpy: y = alpha * x + y. It currently supports float32.
 
-#include "cuda_runtime.h"
-#include "cli_args.hpp"
-#include "experiment_types.hpp"
-#include "utils.cuh"
-#include "vector_add_config.hpp"
+#include <cuda_runtime.h>
+#include <kernel_lab/utils/cli_args.hpp>
+#include <kernel_lab/utils/experiment_types.hpp>
+#include <kernel_lab/utils/cuda_utils.cuh>
+#include <kernel_lab/ops/vector_add/config.hpp>
 
 #include <cublas_v2.h>
 #include <cmath>
@@ -15,6 +15,9 @@
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+
+using namespace kernel_lab;
+using namespace kernel_lab::ops::vector_add;
 
 static void checkCublas(cublasStatus_t status, const char *func) {
   if (status != CUBLAS_STATUS_SUCCESS) {

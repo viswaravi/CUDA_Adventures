@@ -1,8 +1,13 @@
 #pragma once
-#include "cuda_runtime.h"
+
+#include <cuda_runtime.h>
+
 #include <cstdlib>
 #include <stdexcept>
-#define CUDA_CALL(func) checkCuda((func), #func, __FILE__, __LINE__)
+
+#define CUDA_CALL(func) ::kernel_lab::checkCuda((func), #func, __FILE__, __LINE__)
+
+namespace kernel_lab {
 
 void checkCuda(cudaError_t result, const char *func, const char *file,
                int line);
@@ -134,3 +139,5 @@ private:
 void printDeviceDetails();
 
 void printKernelConfig(dim3 grid, dim3 block);
+
+} // namespace kernel_lab

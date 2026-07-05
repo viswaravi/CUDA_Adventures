@@ -1,7 +1,8 @@
 
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
 #include <device_functions.h>
+
 #include <stdio.h>
 #include <iostream>
 #include <random>
@@ -9,6 +10,7 @@
 #include <exception>
 #include <string>
 #include <iomanip>
+
 #include <cublas_v2.h>
 
 # define BLOCK_WIDTH 32

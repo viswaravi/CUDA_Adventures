@@ -8,11 +8,16 @@
 #include <random>
 #include <string>
 #include <vector>
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
-#include "cli_args.hpp"
-#include "utils.cuh"
+
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+
+#include <kernel_lab/utils/cli_args.hpp>
+#include <kernel_lab/utils/cuda_utils.cuh>
+
 #include "kernels.cuh"
+
+using namespace kernel_lab;
 
 void printMemoryRequirements(unsigned long M, unsigned long N, unsigned long K)
 {

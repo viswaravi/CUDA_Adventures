@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cuda_runtime.h"
+#include <cuda_runtime.h>
 
 #define BLOCK_WIDTH 1024
 #define FULL_MASK 0xffffffff

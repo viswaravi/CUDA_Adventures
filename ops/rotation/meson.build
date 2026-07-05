@@ -1,3 +1,5 @@
+ops_rotation_private_vendor_inc = include_directories('../../utils')
+
 libops_rotation_cuda = static_library(
     'ops_rotation_cuda',
     'backends/cuda/kernels.cu',
@@ -11,6 +13,7 @@ libops_rotation_cuda_dep = declare_dependency(
 executable('ops_rotation_cuda_runner',
     'backends/cuda/rotation_cuda_main.cu',
     dependencies: [cuda_utils_dep, libops_rotation_cuda_dep],
+    include_directories: ops_rotation_private_vendor_inc,
     override_options: cuda_target_options)
 
 if get_option('enable_ptx_export')
@@ -18,7 +21,7 @@ if get_option('enable_ptx_export')
         input: 'backends/cuda/kernels.cu',
         output: 'rotation_kernels.ptx',
         command: [nvcc, '--ptx'] + cuda_export_args + [
-                  '-I' + join_paths(meson.project_source_root(), 'utils'),
+                  kernel_lab_utils_public_include_arg,
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)
 endif
@@ -28,7 +31,7 @@ if get_option('enable_cubin_export')
         input: 'backends/cuda/kernels.cu',
         output: 'rotation_kernels.cubin',
         command: [nvcc, '--cubin'] + cuda_export_args + [
-                  '-I' + join_paths(meson.project_source_root(), 'utils'),
+                  kernel_lab_utils_public_include_arg,
                   '-o', '@OUTPUT@', '@INPUT@'],
         build_by_default: true)
 

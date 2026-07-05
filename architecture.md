@@ -10,8 +10,11 @@ The target layout for an operation is:
 ops/<op>/
   <op-or-experiment>.yaml
   meson.build
-  common/
-    <op>_config.hpp
+  include/
+    kernel_lab/
+      ops/
+        <op>/
+          <public op headers>.hpp
   backends/
     cuda/
       <op>_cuda_runner.cu
@@ -30,6 +33,25 @@ ops/<op>/
 The active CUDA operations now use this backend-owned layout. `attention`
 still contains placeholder kernel directories and should follow the same layout
 when it is implemented.
+
+Shared utilities follow the same module-owned public/private split:
+
+```text
+utils/
+  include/kernel_lab/utils/
+    <public utility headers>.hpp
+    <public utility headers>.cuh
+  src/
+    <utility implementation sources>.cu
+```
+
+Public C++/CUDA APIs live under the `kernel_lab` namespace. Operation public
+APIs use `kernel_lab::ops::<op>`. Public headers are included by package path,
+for example `<kernel_lab/utils/cuda_utils.cuh>` or
+`<kernel_lab/ops/vector_add/config.hpp>`. Backend-local headers such as
+`kernels.cuh` remain private quoted includes from the owning backend directory.
+Vendor headers such as STB are private implementation details and are not
+exported through public module dependencies.
 
 ## Experiment Schema
 
@@ -99,17 +121,19 @@ Backend executables should expose normalized CLI fields where applicable:
 
 Shape, memory, execution, tuning, and params fields become explicit CLI flags for that backend, for example `--n`, `--memory-host`, `--execution-mode`, `--streams`, `--free-mem-threshold`, `--vector-width`, `--block-size`, or `--alpha`.
 
-For C++/CUDA/CUDA-library backends, put shared operation config in
-`ops/<op>/common/` when multiple backends consume the same fields. For example,
-`ops/vector_add/common/vector_add_config.hpp` defines `VectorAddConfig`, the
-vector-add ArgSpecs, and conversion from `RunConfig`. CUDA and cuBLAS both
+For C++/CUDA/CUDA-library backends, put shared operation config in the
+operation public include tree when multiple backends consume the same fields.
+For example, `ops/vector_add/include/kernel_lab/ops/vector_add/config.hpp`
+defines `kernel_lab::ops::vector_add::VectorAddConfig`, the vector-add
+ArgSpecs, and conversion from `kernel_lab::RunConfig`. CUDA and cuBLAS both
 parse the same normalized CLI into that config, then validate only the subset
 they implement.
 
-Shared experiment-level C++ types belong in `utils/`. For example,
-`utils/experiment_types.hpp` owns common `Status`, `DType`, tolerance, dtype
-parsing, and default vector-width helpers. `utils/cuda_dtype.cuh` owns CUDA
-half and bfloat16 conversion helpers for future typed runners.
+Shared experiment-level C++ types belong in the utils public include tree. For
+example, `utils/include/kernel_lab/utils/experiment_types.hpp` owns common
+`Status`, `DType`, tolerance, dtype parsing, and default vector-width helpers.
+`utils/include/kernel_lab/utils/cuda_dtype.cuh` owns CUDA half and bfloat16
+conversion helpers for future typed runners.
 Operation-specific execution code should stay under the owning backend folder.
 
 ## Backend Implementation Guidance
@@ -131,8 +155,11 @@ Current vector-add layout:
 ```text
 ops/vector_add/
   experiments.yaml
-  common/
-    vector_add_config.hpp
+  include/
+    kernel_lab/
+      ops/
+        vector_add/
+          config.hpp
   backends/
     cuda/
       vector_add_cuda_runner.cu
@@ -147,7 +174,7 @@ ops/vector_add/
 ```
 
 CUDA vector-add uses `vector_add_cuda_runner.cu` as the executable source. It
-parses the normalized CLI through the op common config and dispatches directly
+parses the normalized CLI through the op public config and dispatches directly
 to explicit dtype-specific kernels in `backends/cuda/kernels.cu`. The CUDA
 backend supports `int32`, `float32`, `float16`, and `bfloat16` with
 `--kernel scalar` and `--kernel vectorized`. The vectorized CUDA path maps to

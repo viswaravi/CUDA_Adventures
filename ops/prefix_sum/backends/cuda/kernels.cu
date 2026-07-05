@@ -1,8 +1,9 @@
-#include "cuda_runtime.h"
-#include "device_atomic_functions.h"
-#include "device_functions.h"
-#include "device_launch_parameters.h"
-#include "utils.cuh"
+#include <cuda_runtime.h>
+#include <device_atomic_functions.h>
+#include <device_functions.h>
+#include <device_launch_parameters.h>
+
+#include <kernel_lab/utils/cuda_utils.cuh>
 
 #define BLOCK_WIDTH 1024
 #define FULL_MASK 0xffffffff

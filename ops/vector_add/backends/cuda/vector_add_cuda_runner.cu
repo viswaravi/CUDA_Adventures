@@ -4,15 +4,15 @@
 // The actual CUDA kernels live in kernels.cu with explicit dtype-specific
 // symbols so PTX/SASS output is easy to inspect.
 
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
 
-#include "cli_args.hpp"
-#include "cuda_dtype.cuh"
-#include "experiment_types.hpp"
+#include <kernel_lab/utils/cli_args.hpp>
+#include <kernel_lab/utils/cuda_dtype.cuh>
+#include <kernel_lab/utils/experiment_types.hpp>
 #include "kernels.cuh"
-#include "utils.cuh"
-#include "vector_add_config.hpp"
+#include <kernel_lab/utils/cuda_utils.cuh>
+#include <kernel_lab/ops/vector_add/config.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -22,6 +22,9 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+using namespace kernel_lab;
+using namespace kernel_lab::ops::vector_add;
 
 namespace {
 

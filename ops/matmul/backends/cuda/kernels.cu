@@ -1,7 +1,7 @@
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
-#include "device_functions.h"
-#include "utils.cuh"
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <device_functions.h>
+#include <kernel_lab/utils/cuda_utils.cuh>
 
 #define BLOCK_WIDTH 32
 

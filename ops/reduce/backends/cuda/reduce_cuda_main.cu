@@ -1,8 +1,8 @@
-#include "cuda_runtime.h"
-#include "device_atomic_functions.h"
-#include "device_functions.h"
-#include "device_launch_parameters.h"
-#include "utils.cuh"
+#include <cuda_runtime.h>
+#include <device_atomic_functions.h>
+#include <device_functions.h>
+#include <device_launch_parameters.h>
+#include <kernel_lab/utils/cuda_utils.cuh>
 #include "kernels.cuh"
 
 #include <assert.h>
@@ -14,7 +14,9 @@
 #include <random>
 #include <string>
 #include <vector>
-#include "cli_args.hpp"
+#include <kernel_lab/utils/cli_args.hpp>
+
+using namespace kernel_lab;
 
 void printArray(float *A, const unsigned long long length)
 {

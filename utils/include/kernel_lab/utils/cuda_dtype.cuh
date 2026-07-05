@@ -1,6 +1,6 @@
 #pragma once
 
-#include "experiment_types.hpp"
+#include <kernel_lab/utils/experiment_types.hpp>
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
@@ -10,6 +10,8 @@
 //
 // Host-side initialization and validation should use these instead of direct
 // casts so half and bfloat16 follow the CUDA-supported conversion paths.
+
+namespace kernel_lab {
 
 template <typename T> __host__ __device__ T cudaValueFromDouble(double value) {
   return static_cast<T>(value);
@@ -53,3 +55,5 @@ inline double readDTypeValueAsDouble(const void *data, std::uint64_t idx,
   }
   throw std::runtime_error("Unsupported dtype");
 }
+
+} // namespace kernel_lab

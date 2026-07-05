@@ -1,11 +1,11 @@
 #include <cuda_runtime.h>
-#include "utils.cuh"
+#include <kernel_lab/utils/cuda_utils.cuh>
 #include "kernels.cuh"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
-#include "cli_args.hpp"
+#include <kernel_lab/utils/cli_args.hpp>
 #include <algorithm>
 #include <cmath>
 #include <exception>
@@ -13,6 +13,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+using namespace kernel_lab;
 
 bool h_is_aligned(const void *ptr, size_t alignment)
 {

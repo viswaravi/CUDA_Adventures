@@ -1,11 +1,13 @@
-#include <cuda_runtime.h>
-#include "utils.cuh"
 #include "kernels.cuh"
+#include <cuda_runtime.h>
+
+#include <kernel_lab/utils/cuda_utils.cuh>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
-#include "cli_args.hpp"
+#include <kernel_lab/utils/cli_args.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <exception>
@@ -13,6 +15,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+using namespace kernel_lab;
 
 #define PI 3.14159265358979323846
 

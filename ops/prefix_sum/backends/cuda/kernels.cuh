@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cuda_runtime.h"
+#include <cuda_runtime.h>
 
 #define BLOCK_WIDTH 1024
 

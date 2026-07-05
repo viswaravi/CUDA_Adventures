@@ -4,6 +4,8 @@
 #include <string>
 #include <cstddef>
 
+namespace kernel_lab {
+
 enum class Status {
   Ok,
   UnsupportedDType,
@@ -91,3 +93,5 @@ inline int defaultVectorWidth(DType dtype) {
   }
   return 1;
 }
+
+} // namespace kernel_lab

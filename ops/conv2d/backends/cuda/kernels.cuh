@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cuda_runtime.h"
+#include <cuda_runtime.h>
 
 __global__ void rgb_to_gray(float *d_in, float *d_out, int width, int height, int channels);
 __global__ void convolution_2d_naive(float *d_in, float *d_out, int width, int height,

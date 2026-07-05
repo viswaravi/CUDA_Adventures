@@ -1,7 +1,8 @@
 ﻿
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
 #include <device_functions.h>
+
 #include <stdio.h>
 #include <iostream>
 #include <random>
@@ -10,6 +11,7 @@
 #include <string>
 #include <iomanip>
 #include <mma.h>
+
 # define BLOCK_WIDTH 4
 
 // Error Handling Wrapper
