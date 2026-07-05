@@ -90,6 +90,14 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertNotIn("--variant", reduce_command)
         self.assertIn("--kernel", reduce_command)
         self.assertIn("--n", reduce_command)
+        self.assertIn("--dtype", reduce_command)
+        self.assertIn("float32", reduce_command)
+        self.assertIn("--validate", reduce_command)
+        self.assertIn("true", reduce_command)
+        self.assertIn("--warmup", reduce_command)
+        self.assertIn("0", reduce_command)
+        self.assertIn("--repeats", reduce_command)
+        self.assertIn("1", reduce_command)
 
         matmul_case = load_experiment_matrix(
             ROOT / "ops/matmul/experiments.yaml").cases[0]

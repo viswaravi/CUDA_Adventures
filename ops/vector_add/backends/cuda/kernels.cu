@@ -1,7 +1,3 @@
-// Explicit CUDA vector_add kernels used by the runtime runner and PTX/SASS
-// export targets. Keep these non-templated so generated symbols are stable and
-// easy to inspect while learning CUDA kernel development.
-
 #include "kernels.cuh"
 
 #include <cuda_runtime.h>

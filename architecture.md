@@ -134,6 +134,8 @@ example, `utils/include/kernel_lab/utils/experiment_types.hpp` owns common
 `Status`, `DType`, tolerance, dtype parsing, and default vector-width helpers.
 `utils/include/kernel_lab/utils/cuda_dtype.cuh` owns CUDA half and bfloat16
 conversion helpers for future typed runners.
+`utils/include/kernel_lab/utils/host_algorithms.hpp` owns small host reference
+algorithms such as CPU sum reduction that can serve multiple ops.
 Operation-specific execution code should stay under the owning backend folder.
 
 ## Backend Implementation Guidance
@@ -182,12 +184,21 @@ backend supports `int32`, `float32`, `float16`, and `bfloat16` with
 Triton vector-add currently supports `float32` with `--kernel block`. cuBLAS
 vector-add is a `float32` SAXPY reference.
 
+Reduce follows the same normalized CUDA runner pattern. Its public config lives
+in `ops/reduce/include/kernel_lab/ops/reduce/config.hpp`, the executable source
+is `ops/reduce/backends/cuda/reduce_cuda_runner.cu`, and the runner accepts
+`--op reduce`, `--kernel`, `--dtype`, `--n`, `--validate`, `--warmup`, and
+`--repeats`. Reduce is currently `float32`-only and dispatches every CUDA kernel
+declared in `ops/reduce/experiments.yaml`, including a full-array
+`warp-primitives` reduction.
+
 ## Build and Verification
 
-Build the migrated vector-add CUDA target:
+Build a migrated CUDA runner target:
 
 ```bash
 meson compile -C build ops_vector_add_cuda_runner
+meson compile -C build ops_reduce_cuda_runner
 ```
 
 CUDA compile flags are owned by the root Meson file and shared by every active

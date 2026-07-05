@@ -15,7 +15,9 @@ class CudaRunner(BackendRunner):
         executable = self._resolve_executable(case)
         if case.op == 'vector_add':
             args = self._vector_add_args(case)
-        elif case.op in ('reduce', 'prefix_sum'):
+        elif case.op == 'reduce':
+            args = self._reduce_args(case)
+        elif case.op == 'prefix_sum':
             args = self._one_dim_args(case)
         elif case.op == 'matmul':
             args = self._matmul_args(case)
@@ -71,6 +73,20 @@ class CudaRunner(BackendRunner):
             '--op', case.op,
             '--kernel', case.kernel,
             '--n', str(case.n),
+        ]
+
+    @staticmethod
+    def _reduce_args(case: ExperimentCase) -> list[str]:
+        if case.n is None:
+            raise BackendRunnerError('Missing required shape.n for reduce')
+        return [
+            '--op', case.op,
+            '--kernel', case.kernel,
+            '--dtype', case.dtype,
+            '--n', str(case.n),
+            '--validate', bool_arg(case.validate),
+            '--warmup', str(case.warmup),
+            '--repeats', str(case.repeats),
         ]
 
     @staticmethod

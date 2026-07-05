@@ -73,6 +73,15 @@ CUDA ops use backend-owned runners with normalized flags. To build a single back
 
 ```bash
 meson compile -C build ops_vector_add_cuda_runner
+meson compile -C build ops_reduce_cuda_runner
+```
+
+Run a normalized CUDA runner directly:
+
+```bash
+./build/ops/reduce/ops_reduce_cuda_runner \
+  --op reduce --kernel sequential-add-load --dtype float32 \
+  --n 1024 --validate true --warmup 1 --repeats 1
 ```
 
 ---

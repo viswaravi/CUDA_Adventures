@@ -7,12 +7,9 @@
 
 using ReductionKernel = void (*)(float *, float *, unsigned long long);
 
-// CPU reference implementation
-double reduceCPU(float *A, const unsigned long long length);
-
 // Kernel variants (reduce1..7: recursive block-sum pattern;
 //                  reduceAtomic: single-pass atomic;
-//                  warpPrimitives: warp-level demo)
+//                  warpPrimitives: full-array warp-shuffle reduction)
 __global__ void reduce1(float *A, float *blockSums, const unsigned long long length);
 __global__ void reduce2(float *A, float *blockSums, const unsigned long long length);
 __global__ void reduce3(float *A, float *blockSums, const unsigned long long length);
